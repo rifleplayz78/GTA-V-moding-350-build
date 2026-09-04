@@ -91,6 +91,45 @@ jobs:
           msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /p:TreatWarningsAsErrors=false /restore
         shell: pwsh
 
+      - name: Stage ScriptHookV Files for ScriptHookVDotNet
+        run: |
+          Write-Host "Locating ScriptHookV headers and output binaries..."
+          
+          # Locate ScriptHookV header, library, and dll files across workspace
+          $shvHeader = Get-ChildItem -Recurse -Filter "ScriptHookV.h" | Select-Object -First 1
+          $shvLib    = Get-ChildItem -Recurse -Filter "ScriptHookV.lib" | Select-Object -First 1
+          $shvDll    = Get-ChildItem -Recurse -Filter "ScriptHookV.dll" | Select-Object -First 1
+          
+          # Target directories in scripthookvdotnet where files might be expected
+          $shvdnTargets = Get-ChildItem -Recurse -Directory -Filter "*scripthookvdotnet*"
+          
+          foreach ($target in $shvdnTargets) {
+            $sdkDir = Join-Path $target.FullName "sdk"
+            $sdkIncDir = Join-Path $target.FullName "sdk\inc"
+            $libDir = Join-Path $target.FullName "lib"
+            
+            New-Item -ItemType Directory -Path $sdkDir -Force | Out-Null
+            New-Item -ItemType Directory -Path $sdkIncDir -Force | Out-Null
+            New-Item -ItemType Directory -Path $libDir -Force | Out-Null
+            
+            if ($shvHeader) {
+              Copy-Item $shvHeader.FullName -Destination $target.FullName -Force
+              Copy-Item $shvHeader.FullName -Destination $sdkDir -Force
+              Copy-Item $shvHeader.FullName -Destination $sdkIncDir -Force
+            }
+            if ($shvLib) {
+              Copy-Item $shvLib.FullName -Destination $target.FullName -Force
+              Copy-Item $shvLib.FullName -Destination $sdkDir -Force
+              Copy-Item $shvLib.FullName -Destination $libDir -Force
+            }
+            if ($shvDll) {
+              Copy-Item $shvDll.FullName -Destination $target.FullName -Force
+              Copy-Item $shvDll.FullName -Destination $sdkDir -Force
+            }
+          }
+          Write-Host "ScriptHookV SDK staging completed successfully."
+        shell: pwsh
+
       - name: Build Heap Adjuster
         run: |
           $sln = Get-ChildItem -Recurse -Filter *HeapAdjuster*.sln | Select-Object -First 1
@@ -111,7 +150,7 @@ jobs:
           }
         shell: pwsh
 
-      - name: Build ScriptHookVDotNet (Using MSBuild for C++ Support)
+      - name: Build ScriptHookVDotNet (MSBuild for C++ Support)
         run: |
           $sln = Get-ChildItem -Recurse -Filter *ScriptHookVDotNet*.sln | Select-Object -First 1
           if ($sln) {
@@ -124,7 +163,6 @@ jobs:
 
       - name: Patch NativeUI Project References
         run: |
-          # Locate built ScriptHookVDotNet assembly
           $shvdnDll = Get-ChildItem -Recurse -Filter "ScriptHookVDotNet*.dll" | Where-Object { $_.FullName -like "*bin*" -and $_.FullName -like "*Release*" } | Select-Object -First 1
           
           if (-not $shvdnDll) {
@@ -134,7 +172,6 @@ jobs:
           if ($shvdnDll) {
             Write-Host "Found ScriptHookVDotNet assembly at: $($shvdnDll.FullName)"
             
-            # Patch every NativeUI .csproj file to reference the generated DLL
             Get-ChildItem -Recurse -Filter "*NativeUI*.csproj" | ForEach-Object {
               $projPath = $_.FullName
               Write-Host "Injecting assembly reference into: $projPath"
