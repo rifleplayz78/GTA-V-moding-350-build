@@ -41,6 +41,10 @@ jobs:
           }
         shell: pwsh
 
+      - name: Restore NuGet Packages
+        run: nuget restore "ScriptHookV-master/ScriptHookV.sln"
+        shell: cmd
+
       - name: Build ScriptHookV
         run: msbuild "ScriptHookV-master/ScriptHookV.sln" /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /p:TreatWarningsAsErrors=false /restore
         shell: cmd
