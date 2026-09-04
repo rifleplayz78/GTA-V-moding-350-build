@@ -93,17 +93,26 @@ jobs:
 
       - name: Stage ScriptHookV Files for ScriptHookVDotNet
         run: |
-          Write-Host "Locating ScriptHookV headers and output binaries..."
+          Write-Host "Current directory: $(Get-Location)"
+          Write-Host "Workspace: ${{github.workspace}}"
           
           # Locate ScriptHookV header, library, and dll files across workspace
           $shvHeader = Get-ChildItem -Recurse -Filter "ScriptHookV.h" | Select-Object -First 1
           $shvLib    = Get-ChildItem -Recurse -Filter "ScriptHookV.lib" | Select-Object -First 1
           $shvDll    = Get-ChildItem -Recurse -Filter "ScriptHookV.dll" | Select-Object -First 1
           
-          # Explicitly target the scripthookvdotnet-main directory
-          $shvdnTargetDir = "scripthookvdotnet-main"
+          Write-Host "Found ScriptHookV.h: $($shvHeader.FullName)"
+          Write-Host "Found ScriptHookV.lib: $($shvLib.FullName)"
+          Write-Host "Found ScriptHookV.dll: $($shvDll.FullName)"
+          
+          # Use absolute path for scripthookvdotnet-main
+          $shvdnTargetDir = Join-Path "${{github.workspace}}" "scripthookvdotnet-main"
+          
+          Write-Host "Target directory: $shvdnTargetDir"
           
           if (Test-Path $shvdnTargetDir) {
+            Write-Host "Found scripthookvdotnet-main directory"
+            
             $sdkDir = Join-Path $shvdnTargetDir "sdk"
             $sdkIncDir = Join-Path $shvdnTargetDir "sdk\inc"
             $libDir = Join-Path $shvdnTargetDir "lib"
@@ -112,23 +121,39 @@ jobs:
             New-Item -ItemType Directory -Path $sdkIncDir -Force | Out-Null
             New-Item -ItemType Directory -Path $libDir -Force | Out-Null
             
+            $copyCount = 0
+            
             if ($shvHeader) {
-              Copy-Item $shvHeader.FullName -Destination $sdkDir -Force
-              Copy-Item $shvHeader.FullName -Destination $sdkIncDir -Force
-              Write-Host "Copied ScriptHookV.h to $sdkIncDir"
+              Copy-Item $shvHeader.FullName -Destination $sdkIncDir -Force -ErrorAction Stop
+              Write-Host "✓ Copied ScriptHookV.h to $sdkIncDir"
+              $copyCount++
+            } else {
+              Write-Error "ScriptHookV.h not found!"
+              exit 1
             }
+            
             if ($shvLib) {
-              Copy-Item $shvLib.FullName -Destination $sdkDir -Force
-              Copy-Item $shvLib.FullName -Destination $libDir -Force
-              Write-Host "Copied ScriptHookV.lib to $libDir"
+              Copy-Item $shvLib.FullName -Destination $sdkDir -Force -ErrorAction Stop
+              Copy-Item $shvLib.FullName -Destination $libDir -Force -ErrorAction Stop
+              Write-Host "✓ Copied ScriptHookV.lib to $sdkDir and $libDir"
+              $copyCount++
+            } else {
+              Write-Error "ScriptHookV.lib not found!"
+              exit 1
             }
+            
             if ($shvDll) {
-              Copy-Item $shvDll.FullName -Destination $sdkDir -Force
-              Write-Host "Copied ScriptHookV.dll to $sdkDir"
+              Copy-Item $shvDll.FullName -Destination $sdkDir -Force -ErrorAction Stop
+              Write-Host "✓ Copied ScriptHookV.dll to $sdkDir"
+              $copyCount++
+            } else {
+              Write-Warning "ScriptHookV.dll not found (may not be required)"
             }
-            Write-Host "ScriptHookV SDK staging completed successfully."
+            
+            Write-Host "ScriptHookV SDK staging completed successfully ($copyCount files copied)."
           } else {
-            Write-Error "scripthookvdotnet-main directory not found!"
+            Write-Error "scripthookvdotnet-main directory not found at: $shvdnTargetDir"
+            Get-ChildItem "$(Split-Path $shvdnTargetDir)" | Write-Host
             exit 1
           }
         shell: pwsh
