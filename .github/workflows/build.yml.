@@ -1,0 +1,13 @@
+name: Build GTA V Mods
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Extract Mod Archive
+        run: |
+          Expand-Archive -Path "Reloaded mods.zip" -DestinationPath "extracted_mods" -Force
+        shell: pwsh
