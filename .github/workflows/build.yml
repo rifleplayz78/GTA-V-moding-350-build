@@ -1,5 +1,8 @@
-name: Build GTA V Mods
+name: Extract and Push Mods
 on: [push]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -10,13 +13,14 @@ jobs:
 
       - name: Extract Mod Archive
         run: |
-          Expand-Archive -Path "Reloaded mods.zip" -DestinationPath "extracted_mods" -Force
+          Expand-Archive -Path "Reloaded mods.zip" -DestinationPath "." -Force
         shell: pwsh
 
-      - name: Initialize MSVC Environment
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Check Extracted Files
+      - name: Commit and Push Files
         run: |
-          Get-ChildItem -Recurse "extracted_mods"
-        shell: pwsh
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-extract Reloaded mods.zip into root view" || echo "No changes to commit"
+          git push
+        shell: bash
