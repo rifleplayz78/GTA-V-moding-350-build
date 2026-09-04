@@ -27,23 +27,17 @@ jobs:
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
             [xml]$xml = Get-Content $_.FullName
             
-            # Set target Windows SDK dynamically from runner environment
+            # Set target Windows SDK
             $nodes = $xml.GetElementsByTagName('WindowsTargetPlatformVersion')
-            foreach ($node in $nodes) {
-              $node.InnerText = $sdkVersion
-            }
+            foreach ($node in $nodes) { $node.InnerText = $sdkVersion }
             
-            # Retarget platform toolset to VS 2022 (v143)
+            # Retarget platform toolset
             $toolsets = $xml.GetElementsByTagName('PlatformToolset')
-            foreach ($toolset in $toolsets) {
-              $toolset.InnerText = 'v143'
-            }
+            foreach ($toolset in $toolsets) { $toolset.InnerText = 'v143' }
             
-            # Enforce C++17 standard to support legacy STL constructs like std::result_of
+            # Enforce C++17
             $cppLangNodes = $xml.GetElementsByTagName('LanguageStandard')
-            foreach ($node in $cppLangNodes) {
-              $node.InnerText = 'stdcpp17'
-            }
+            foreach ($node in $cppLangNodes) { $node.InnerText = 'stdcpp17' }
             
             $xml.Save($_.FullName)
           }
@@ -60,26 +54,20 @@ jobs:
           $stackWalkerProj = Get-ChildItem -Recurse -Filter *StackWalker*.vcxproj | Select-Object -First 1
           
           if ($stackWalkerProj) {
-            Write-Host "Compiling StackWalker project..."
             msbuild $stackWalkerProj.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
           } else {
             $stackWalkerCpp = Get-ChildItem -Recurse -Filter *StackWalker*.cpp | Select-Object -First 1
             if ($stackWalkerCpp) {
-              Write-Host "Found $($stackWalkerCpp.FullName) — compiling to StackWalker.lib manually..."
               $cppDir = $stackWalkerCpp.DirectoryName
               Push-Location $cppDir
               cl /c /EHsc /O2 /MD $stackWalkerCpp.Name
               lib *.obj /OUT:StackWalker.lib
               Pop-Location
-            } else {
-              Write-Host "No StackWalker source files found."
             }
           }
 
-          # Stage compiled StackWalker.lib into expected linker directories
           $libs = Get-ChildItem -Recurse -Filter StackWalker.lib
           foreach ($lib in $libs) {
-            Write-Host "Placing StackWalker.lib at target directory..."
             Copy-Item $lib.FullName -Destination "ScriptHookV-master/ScriptHookV/" -Force -ErrorAction SilentlyContinue
             Copy-Item $lib.FullName -Destination "ScriptHookV-master/" -Force -ErrorAction SilentlyContinue
           }
@@ -91,158 +79,35 @@ jobs:
           msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /p:TreatWarningsAsErrors=false /restore
         shell: pwsh
 
-      - name: List ScriptHookV-master contents
-        run: |
-          Write-Host "=== ScriptHookV-master directory structure ==="
-          if (Test-Path "ScriptHookV-master") {
-            Get-ChildItem -Path "ScriptHookV-master" -Recurse -File | Select-Object -ExpandProperty FullName | Sort-Object
-          } else {
-            Write-Host "ScriptHookV-master folder not found in working directory."
-          }
-        shell: pwsh
-
-      - name: Stage ScriptHookV Files for ScriptHookVDotNet
-        run: |
-          Write-Host "=== DEBUG: Locating ScriptHookV files ==="
-          Write-Host "Current directory: $(Get-Location)"
-          Write-Host "Workspace: ${{github.workspace}}"
-          
-          # Search for files across workspace
-          Write-Host ""
-          Write-Host "Searching for ScriptHookV.h..."
-          $shvHeader = Get-ChildItem -Recurse -Filter "ScriptHookV.h" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($shvHeader) {
-            Write-Host "✓ Found: $($shvHeader.FullName)"
-          } else {
-            Write-Host "✗ NOT FOUND"
-          }
-          
-          Write-Host ""
-          Write-Host "Searching for ScriptHookV.lib..."
-          $shvLib = Get-ChildItem -Recurse -Filter "ScriptHookV.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($shvLib) {
-            Write-Host "✓ Found: $($shvLib.FullName)"
-          } else {
-            Write-Host "✗ NOT FOUND"
-          }
-          
-          Write-Host ""
-          Write-Host "Searching for ScriptHookV.dll..."
-          $shvDll = Get-ChildItem -Recurse -Filter "ScriptHookV.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($shvDll) {
-            Write-Host "✓ Found: $($shvDll.FullName)"
-          } else {
-            Write-Host "ℹ NOT FOUND (may not be required)"
-          }
-          
-          # Resolve target path using github workspace
-          $shvdnTargetDir = Join-Path "${{github.workspace}}" "scripthookvdotnet-main"
-          Write-Host ""
-          Write-Host "Target SDK directory: $shvdnTargetDir"
-          
-          if (-not (Test-Path $shvdnTargetDir)) {
-            Write-Error "scripthookvdotnet-main directory not found!"
-            exit 1
-          }
-          
-          # Match ScriptHookVDotNet.vcxproj requirements (sdk\inc and sdk\lib)
-          $sdkDir = Join-Path $shvdnTargetDir "sdk"
-          $sdkIncDir = Join-Path $shvdnTargetDir "sdk\inc"
-          $libDir = Join-Path $shvdnTargetDir "sdk\lib"
-          
-          Write-Host ""
-          Write-Host "Creating directories..."
-          New-Item -ItemType Directory -Path $sdkIncDir -Force | Out-Null
-          New-Item -ItemType Directory -Path $libDir -Force | Out-Null
-          Write-Host "✓ Created $sdkIncDir"
-          Write-Host "✓ Created $libDir"
-          
-          Write-Host ""
-          Write-Host "=== COPYING FILES ==="
-          
-          if (-not $shvHeader) {
-            Write-Error "FATAL: ScriptHookV.h not found in workspace!"
-            exit 1
-          }
-          Copy-Item $shvHeader.FullName -Destination $sdkIncDir -Force
-          Write-Host "✓ Copied $($shvHeader.Name) to sdk\inc"
-          
-          if (-not $shvLib) {
-            Write-Error "FATAL: ScriptHookV.lib not found in workspace!"
-            exit 1
-          }
-          Copy-Item $shvLib.FullName -Destination $libDir -Force
-          Write-Host "✓ Copied $($shvLib.Name) to sdk\lib"
-          
-          if ($shvDll) {
-            Copy-Item $shvDll.FullName -Destination $sdkDir -Force
-            Write-Host "✓ Copied $($shvDll.Name) to sdk"
-          }
-          
-          # Verify files were staged properly
-          Write-Host ""
-          Write-Host "=== VERIFICATION ==="
-          $copiedHeaders = Get-ChildItem -Path $sdkIncDir -Filter "*.h" -ErrorAction SilentlyContinue
-          $copiedLibs = Get-ChildItem -Path $libDir -Filter "*.lib" -ErrorAction SilentlyContinue
-          
-          Write-Host "Headers in sdk\inc: $($copiedHeaders.Count)"
-          Write-Host "Libraries in sdk\lib: $($copiedLibs.Count)"
-          
-          if ($copiedHeaders.Count -eq 0 -or $copiedLibs.Count -eq 0) {
-            Write-Error "File copy verification FAILED!"
-            exit 1
-          }
-          
-          Write-Host ""
-          Write-Host "✓ SDK staging completed successfully!"
-        shell: pwsh
+      # NOTE: The dynamic staging step is completely removed. 
+      # The workflow now expects the SDK files to be pre-committed in scripthookvdotnet-main/sdk/
 
       - name: Build Heap Adjuster
         run: |
           $sln = Get-ChildItem -Recurse -Filter *HeapAdjuster*.sln | Select-Object -First 1
-          if ($sln) {
-            msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore
-          } else {
-            Write-Warning "HeapAdjuster solution file not found in workspace."
-          }
+          if ($sln) { msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore }
         shell: pwsh
 
       - name: Build Packfile Limit Adjuster
         run: |
           $sln = Get-ChildItem -Recurse -Filter *PackfileLimitAdjuster*.sln | Select-Object -First 1
-          if ($sln) {
-            msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore
-          } else {
-            Write-Warning "PackfileLimitAdjuster solution file not found in workspace."
-          }
+          if ($sln) { msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore }
         shell: pwsh
 
-      - name: Build ScriptHookVDotNet (MSBuild for C++ Support)
+      - name: Build ScriptHookVDotNet
         run: |
           $sln = Get-ChildItem -Recurse -Filter *ScriptHookVDotNet*.sln | Select-Object -First 1
-          if ($sln) {
-            Write-Host "Building ScriptHookVDotNet via MSBuild: $($sln.FullName)"
-            msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /restore
-          } else {
-            Write-Warning "ScriptHookVDotNet solution file not found in workspace."
-          }
+          if ($sln) { msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /restore }
         shell: pwsh
 
       - name: Patch NativeUI Project References
         run: |
           $shvdnDll = Get-ChildItem -Recurse -Filter "ScriptHookVDotNet*.dll" | Where-Object { $_.FullName -like "*bin*" -and $_.FullName -like "*Release*" } | Select-Object -First 1
-          
-          if (-not $shvdnDll) {
-            $shvdnDll = Get-ChildItem -Recurse -Filter "ScriptHookVDotNet*.dll" | Select-Object -First 1
-          }
+          if (-not $shvdnDll) { $shvdnDll = Get-ChildItem -Recurse -Filter "ScriptHookVDotNet*.dll" | Select-Object -First 1 }
 
           if ($shvdnDll) {
-            Write-Host "Found ScriptHookVDotNet assembly at: $($shvdnDll.FullName)"
-            
             Get-ChildItem -Recurse -Filter "*NativeUI*.csproj" | ForEach-Object {
               $projPath = $_.FullName
-              Write-Host "Injecting assembly reference into: $projPath"
-              
               [xml]$xml = Get-Content $projPath
               
               Copy-Item $shvdnDll.FullName -Destination $_.DirectoryName -Force
@@ -260,29 +125,19 @@ jobs:
               
               $xml.Save($projPath)
             }
-          } else {
-            Write-Warning "Could not locate ScriptHookVDotNet.dll to bind NativeUI."
           }
         shell: pwsh
 
       - name: Build NativeUI
         run: |
           $sln = Get-ChildItem -Recurse -Filter *NativeUI*.sln | Select-Object -First 1
-          if ($sln) {
-            dotnet build $sln.FullName -c Release
-          } else {
-            Write-Warning "NativeUI solution file not found in workspace."
-          }
+          if ($sln) { dotnet build $sln.FullName -c Release }
         shell: pwsh
 
       - name: Build MenyooSP (Trainer)
         run: |
           $sln = Get-ChildItem -Recurse -Filter *Menyoo*.sln | Select-Object -First 1
-          if ($sln) {
-            msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore
-          } else {
-            Write-Warning "Menyoo solution file not found in workspace."
-          }
+          if ($sln) { msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore }
         shell: pwsh
 
       - name: Collect and Package Binaries
