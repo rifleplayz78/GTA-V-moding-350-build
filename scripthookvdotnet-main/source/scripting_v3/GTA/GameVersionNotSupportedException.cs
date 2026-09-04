@@ -1,0 +1,192 @@
+//
+// Copyright (C) 2015 crosire & kagikn & contributors
+// License: https://github.com/scripthookvdotnet/scripthookvdotnet#license
+//
+
+using System;
+using System.Runtime.Serialization;
+using System.Security.Permissions;
+using System.Text;
+using System.Collections.Generic;
+
+namespace GTA
+{
+    /// <summary>
+    /// The exception that is thrown when an invoked method is not supported in the running game version.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="GameVersionNotSupportedException"/> indicates that no implementation exists for the running game
+    /// version for an invoked method or property. There are two typical cases where a
+    /// <see cref="GameVersionNotSupportedException"/> is thrown:
+    /// <list type="bullet">
+    /// <item>
+    /// <description>
+    /// The relevant implementation is completely absent and operation cannot be performed in a meaningful way in
+    /// the running game version. For example, <see cref="Vehicle.SetRestrictedAmmoCount(int, int)"/> cannot be
+    /// implemented for the game versions earlier than v1.0.877.1 due to the absence of the member of restricted ammo
+    /// count in <c>CVehicle</c>.
+    /// </description>
+    /// </item>
+    /// <item>
+    /// <description>
+    /// An invoked method or property calls a native function that does not exist in the running game version.
+    /// In this case, some issues can be resolved with a custom wrapper implementation for earlier game version
+    /// if relevant implementation is present.
+    /// </description>
+    /// </item>
+    /// </list>
+    /// </remarks>
+    [Serializable]
+    public sealed partial class GameVersionNotSupportedException : Exception
+    {
+        public Version MinimumSupportedGameFileVersion { get; }
+
+        private readonly Dictionary<Version, GameVersion> _supportedGameVersionEnumMaps
+            = new()
+        {
+            { ExeVersions.b335_2, GameVersion.v1_0_335_2_Steam },
+            { ExeVersions.b350_1, GameVersion.v1_0_350_1_Steam },
+            { ExeVersions.b350_2, GameVersion.v1_0_350_2_NoSteam },
+            { ExeVersions.b372_2, GameVersion.v1_0_372_2_Steam },
+            { ExeVersions.b393_2, GameVersion.v1_0_393_2_Steam },
+            { ExeVersions.b393_4, GameVersion.v1_0_393_4_Steam },
+            { ExeVersions.b463_1, GameVersion.v1_0_463_1_Steam },
+            { ExeVersions.b505_2, GameVersion.v1_0_505_2_Steam },
+            { ExeVersions.b573_1, GameVersion.v1_0_573_1_Steam },
+            { ExeVersions.b617_1, GameVersion.v1_0_617_1_Steam },
+            { ExeVersions.b678_1, GameVersion.v1_0_678_1_Steam },
+            { ExeVersions.b757_2, GameVersion.v1_0_757_2_Steam },
+            { ExeVersions.b757_4, GameVersion.v1_0_757_3_Steam },
+            { ExeVersions.b791_2, GameVersion.v1_0_791_2_Steam },
+            { ExeVersions.b877_1, GameVersion.v1_0_877_1_Steam },
+            { ExeVersions.b944_2, GameVersion.v1_0_944_2_Steam },
+            { ExeVersions.b1011_1, GameVersion.v1_0_1011_1_Steam },
+            { ExeVersions.b1032_1, GameVersion.v1_0_1032_1_Steam },
+            { ExeVersions.b1103_2, GameVersion.v1_0_1103_2_Steam },
+            { ExeVersions.b1180_2, GameVersion.v1_0_1180_2_Steam },
+            { ExeVersions.b1290_1, GameVersion.v1_0_1290_1_Steam },
+            { ExeVersions.b1365_1, GameVersion.v1_0_1365_1_Steam },
+            { ExeVersions.b1493, GameVersion.v1_0_1493_0_Steam },
+            { ExeVersions.b1493_1, GameVersion.v1_0_1493_1_Steam },
+            { ExeVersions.b1604, GameVersion.v1_0_1604_0_Steam },
+            { ExeVersions.b1604_1, GameVersion.v1_0_1604_1_Steam },
+            { ExeVersions.b1734, GameVersion.v1_0_1737_0_Steam },
+            { ExeVersions.b1737, GameVersion.v1_0_1737_0_Steam },
+            { ExeVersions.b1737_6, GameVersion.v1_0_1737_6_Steam },
+            { ExeVersions.b1868, GameVersion.v1_0_1868_0_Steam },
+            { ExeVersions.b1868_1, GameVersion.v1_0_1868_1_Steam },
+            { ExeVersions.b1868_4, GameVersion.v1_0_1868_4_EGS },
+            { ExeVersions.b2060, GameVersion.v1_0_2060_0_Steam },
+            { ExeVersions.b2060_1, GameVersion.v1_0_2060_1_Steam },
+            { ExeVersions.b2189, GameVersion.v1_0_2189_0_Steam },
+            { ExeVersions.b2215, GameVersion.v1_0_2215_0_Steam },
+            { ExeVersions.b2245, GameVersion.v1_0_2245_0_Steam },
+            { ExeVersions.b2372, GameVersion.v1_0_2372_0_Steam },
+            { ExeVersions.b2372_2, GameVersion.v1_0_2372_0_Steam },
+            { ExeVersions.b2545, GameVersion.v1_0_2545_0_Steam },
+            { ExeVersions.b2612_1, GameVersion.v1_0_2612_1_Steam },
+            { ExeVersions.b2628_2, GameVersion.v1_0_2628_2_Steam },
+            { ExeVersions.b2699, GameVersion.v1_0_2699_0_Steam },
+            { ExeVersions.b2699_16, GameVersion.v1_0_2699_16 },
+            { ExeVersions.b2802, GameVersion.v1_0_2802_0 },
+            { ExeVersions.b2824, GameVersion.v1_0_2824_0 },
+            { ExeVersions.b2845, GameVersion.v1_0_2845_0 },
+            { ExeVersions.b2944, GameVersion.v1_0_2944_0 },
+            { ExeVersions.b3028, GameVersion.v1_0_3028_0 },
+            { ExeVersions.b3095, GameVersion.v1_0_3095_0 },
+            { ExeVersions.b3179, GameVersion.v1_0_3179_0 },
+            { ExeVersions.b3258, GameVersion.v1_0_3258_0 },
+            { ExeVersions.b3274, GameVersion.v1_0_3274_0 },
+            { ExeVersions.b3323, GameVersion.v1_0_3323_0 },
+            { ExeVersions.b3337, GameVersion.v1_0_3337_0 },
+            { ExeVersions.b3351, GameVersion.v1_0_3351_0 },
+            { ExeVersions.b3407, GameVersion.v1_0_3407_0 },
+            { ExeVersions.b3411, GameVersion.v1_0_3411_0 },
+            { ExeVersions.b3442, GameVersion.v1_0_3442_0 },
+            { ExeVersions.b3504, GameVersion.v1_0_3504_0 },
+            { ExeVersions.b3521, GameVersion.v1_0_3521_0 },
+            { ExeVersions.b3570, GameVersion.v1_0_3570_0 },
+            { ExeVersions.b3586, GameVersion.v1_0_3586_0 },
+            { ExeVersions.b3717, GameVersion.v1_0_3717_0 },
+            { ExeVersions.b3725, GameVersion.v1_0_3725_0 },
+            { ExeVersions.b3751, GameVersion.v1_0_3751_0 },
+            { ExeVersions.b3788, GameVersion.v1_0_3788_0 },
+            { ExeVersions.b3889, GameVersion.v1_0_3889_0 },
+        };
+
+        internal GameVersionNotSupportedException(Version minSupportedGameVersion, string className, string propertyOrMethodName) : base(BuildErrorMessage(minSupportedGameVersion, className, propertyOrMethodName))
+        {
+            MinimumSupportedGameFileVersion = minSupportedGameVersion;
+
+            if (_supportedGameVersionEnumMaps.TryGetValue(minSupportedGameVersion, out GameVersion gameVersion))
+            {
+#pragma warning disable CS0618 // Type or member is obsolete
+                MinimumSupportedGameVersion = gameVersion;
+#pragma warning restore CS0618 // Type or member is obsolete
+            }
+            else
+            {
+                // shouldn't come here unless we mess up in our codebase
+
+#pragma warning disable CS0618 // Type or member is obsolete
+                MinimumSupportedGameVersion = GameVersion.Unknown;
+#pragma warning restore CS0618 // Type or member is obsolete
+
+            }
+        }
+
+        private GameVersionNotSupportedException(SerializationInfo info, StreamingContext context) : base(info, context)
+        {
+            MinimumSupportedGameFileVersion
+                = (Version)info.GetValue("MinimumSupportedGameFileVersion", typeof(GameVersion));
+
+#pragma warning disable CS0618 // Type or member is obsolete
+            MinimumSupportedGameVersion
+                = (GameVersion)info.GetValue("MinimumSupportedGameVersion", typeof(GameVersion));
+#pragma warning restore CS0618 // Type or member is obsolete
+        }
+
+        [SecurityPermission(SecurityAction.Demand, SerializationFormatter = true)]
+        public override void GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            base.GetObjectData(info, context);
+            info.AddValue("MinimumSupportedGameFileVersion", MinimumSupportedGameFileVersion, typeof(Version));
+
+#pragma warning disable CS0618 // Type or member is obsolete
+            info.AddValue("MinimumSupportedVersion", MinimumSupportedGameVersion, typeof(GameVersion));
+#pragma warning restore CS0618 // Type or member is obsolete
+        }
+
+        internal static string BuildErrorMessage(Version minSupportedGameVersion, string className, string propertyOrMethodName)
+        {
+            // The formatted game version (such as "v1.0.335.2") string won't take more than 16 characters
+            // on condition that the build number (the third number) is up to 65535 and the other 3 numbers
+            // is between 0 and 9.
+            const int SbCapacity = 16;
+            StringBuilder sb = new StringBuilder(SbCapacity);
+            sb.Append("v");
+            sb.Append(minSupportedGameVersion.Major);
+            sb.Append(".");
+            sb.Append(minSupportedGameVersion.Minor);
+            sb.Append(".");
+            sb.Append(minSupportedGameVersion.Build);
+            sb.Append(".");
+            sb.Append(minSupportedGameVersion.Revision);
+            string formattedSupportedGameVersionStr = sb.ToString();
+
+            return $"{className}.{propertyOrMethodName} is supported only in the game version " +
+                $"{formattedSupportedGameVersionStr} or later.";
+        }
+
+        internal static void ThrowIfNotSupported(Version minSupportedVersion, string className, string propertyOrMethodName)
+        {
+            if (Game.FileVersion < minSupportedVersion)
+            {
+                Throw(minSupportedVersion, className, propertyOrMethodName);
+            }
+        }
+
+        internal static void Throw(Version minSupportedVersion, string className, string propertyOrMethodName)
+            => throw new GameVersionNotSupportedException(minSupportedVersion, className, propertyOrMethodName);
+    }
+}

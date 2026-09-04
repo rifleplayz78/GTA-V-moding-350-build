@@ -1,0 +1,224 @@
+//
+// Copyright (C) 2015 crosire & kagikn & contributors
+// License: https://github.com/scripthookvdotnet/scripthookvdotnet#license
+//
+
+namespace GTA
+{
+    /// <summary>
+    /// An enumeration of all possible event types except for network and error events.
+    /// </summary>
+    public enum EventType
+    {
+        AcquaintancePedDislike,
+        AcquaintancePedHate,
+        AcquaintancePedLike,
+        AcquaintancePedRespect,
+        AcquaintancePedWanted,
+        AcquaintancePedDead,
+        Agitated,
+        AgitatedAction,
+        EncroachingPed,
+        CallForCover,
+        CarUndriveable,
+        ClimbLadderOnRoute,
+        ClimbNavmeshOnRoute,
+        CombatTaunt,
+        CommunicateEvent,
+        CopCarBeingStolen,
+        CrimeReported,
+        Damage,
+        DeadPedFound,
+        Death,
+        DraggedOutCar,
+        DummyConversion,
+        Explosion,
+        ExplosionHeard,
+        FireNearby,
+        FlushTasks,
+        FootStepHeard,
+        GetOutOfWater,
+        GivePedTask,
+        GunAimedAt,
+        HelpAmbientFriend,
+        InjuredCryForHelp,
+        CrimeCryForHelp,
+        InAir,
+        InWater,
+        /// <summary>
+        /// Not available in 1.0.1737.6 or earlier.
+        /// </summary>
+        Incapacitated,
+        LeaderEnteredCarAsDriver,
+        LeaderEnteredCover,
+        LeaderExitedCarAsDriver,
+        LeaderHolsteredWeapon,
+        LeaderLeftCover,
+        LeaderUnholsteredWeapon,
+        MeleeAction,
+        MustLeaveBoat,
+        NewTask,
+        None,
+        ObjectCollision,
+        OnFire,
+        OpenDoor,
+        ShovePed,
+        PedCollisionWithPed,
+        PedCollisionWithPlayer,
+        PedEnteredMyVehicle,
+        PedJackingMyVehicle,
+        PedOnCarRoof,
+        PedToChase,
+        PedToFlee,
+        PlayerCollisionWithPed,
+        PlayerLockOnTarget,
+        PotentialBeWalkedInto,
+        PotentialBlast,
+        PotentialGetRunOver,
+        PotentialWalkIntoFire,
+        PotentialWalkIntoObject,
+        PotentialWalkIntoVehicle,
+        ProvidingCover,
+        RadioTargetPosition,
+        RanOverPed,
+        ReactionCombatVictory,
+        ReactionEnemyPed,
+        ReactionInvestigateDeadPed,
+        ReactionInvestigateThreat,
+        RequestHelpWithConfrontation,
+        RespondedToThreat,
+        Revived,
+        ScriptCommand,
+        /// <summary>
+        /// Not available in 1.0.1737.6 or earlier.
+        /// </summary>
+        ShockingBrokenGlass,
+        ShockingCarAlarm,
+        ShockingCarChase,
+        ShockingCarCrash,
+        ShockingBicycleCrash,
+        ShockingCarPileUp,
+        ShockingCarOnCar,
+        ShockingDangerousAnimal,
+        ShockingDeadBody,
+        ShockingDrivingOnPavement,
+        ShockingBicycleOnPavement,
+        ShockingEngineRevved,
+        ShockingExplosion,
+        ShockingFire,
+        ShockingGunFight,
+        ShockingGunshotFired,
+        ShockingHelicopterOverhead,
+        ShockingParachuterOverhead,
+        ShockingPedKnockedIntoByPlayer,
+        ShockingHornSounded,
+        ShockingInDangerousVehicle,
+        ShockingInjuredPed,
+        ShockingMadDriver,
+        ShockingMadDriverExtreme,
+        ShockingMadDriverBicycle,
+        ShockingMugging,
+        ShockingNonViolentWeaponAimedAt,
+        ShockingPedRunOver,
+        ShockingPedShot,
+        ShockingPlaneFlyBy,
+        ShockingPotentialBlast,
+        ShockingPropertyDamage,
+        ShockingRunningPed,
+        ShockingRunningStampede,
+        ShockingSeenCarStolen,
+        ShockingSeenConfrontation,
+        ShockingSeenGangFight,
+        ShockingSeenInsult,
+        ShockingSeenMeleeAction,
+        ShockingSeenNiceCar,
+        ShockingSeenPedKilled,
+        ShockingSeenVehicleTowed,
+        ShockingSeenWeaponThreat,
+        ShockingSeenWeirdPed,
+        ShockingSeenWeirdPedApproaching,
+        ShockingSiren,
+        ShockingStudioBomb,
+        ShockingVisibleWeapon,
+        ShotFired,
+        ShotFiredBulletImpact,
+        ShotFiredWhizzedBy,
+        FriendlyAimedAt,
+        FriendlyFireNearMiss,
+        ShoutBlockingLos,
+        ShoutTargetPosition,
+        StaticCountReachedMax,
+        StuckInAir,
+        SuspiciousActivity,
+        Switch2NmTask,
+        UnidentifiedPed,
+        VehicleCollision,
+        VehicleDamageWeapon,
+        VehicleOnFire,
+        WhistlingHeard,
+        Disturbance,
+        EntityDamaged,
+        EntityDestroyed,
+        Writhe,
+        HurtTransition,
+        PlayerUnableToEnterVehicle,
+        ScenarioForceAction,
+        StatValueChanged,
+        PlayerDeath,
+        PedSeenDeadPed,
+        Invalid = -1,
+    }
+
+    /// <summary>
+    /// Provides <see langword="internal"/> extension methods for <see cref="EventType"/>.
+    /// </summary>
+    internal static class EventTypeExtensions
+    {
+        /// <summary>
+        /// Returns the value of this <see cref="EventType"/> aligned to the game build.
+        /// </summary>
+        /// <param name="eventType">The <see cref="EventType"/> to correct.</param>
+        /// <returns>The corrected integer value based on game build.</returns>
+        internal static int GetInternalValue(this EventType eventType) => EventTypeHelpers.GetInternalValue(eventType);
+    }
+
+    /// <summary>
+    /// Provides <see langword="internal"/> helpers for <see cref="EventType"/>.
+    /// </summary>
+    internal static class EventTypeHelpers
+    {
+        /// <summary>
+        /// Returns the value of a <see cref="EventType"/> aligned to the game build.
+        /// </summary>
+        /// <param name="eventType">The <see cref="EventType"/> to correct.</param>
+        /// <returns>The corrected integer value based on game build.</returns>
+        internal static int GetInternalValue(EventType eventType)
+        {
+            int value = (int)eventType;
+
+            if (Game.FileVersion >= ExeVersions.b1868)
+            {
+                return value;
+            }
+
+            if (eventType is EventType.Incapacitated or EventType.ShockingBrokenGlass)
+            {
+                ThrowHelper.ThrowArgumentException(
+                    $"{nameof(EventType)}.{nameof(eventType)} is not available in game versions prior to v1.0.1868.0!",
+                    nameof(eventType));
+            }
+
+            if (value >= 77)
+            {
+                return value - 2;
+            }
+
+            if (value >= 36)
+            {
+                return value - 1;
+            }
+
+            return value;
+        }
+    }
+}
