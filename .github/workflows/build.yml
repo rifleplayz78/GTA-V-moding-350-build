@@ -42,7 +42,7 @@ jobs:
         shell: pwsh
 
       - name: Build ScriptHookV
-        run: msbuild "ScriptHookV-master/ScriptHookV.sln" /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore
+        run: msbuild "ScriptHookV-master/ScriptHookV.sln" /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /p:TreatWarningsAsErrors=false /restore
         shell: cmd
 
       - name: Build Heap Adjuster
