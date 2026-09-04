@@ -21,29 +21,38 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Retarget Windows SDK
+      - name: Retarget Projects for VS2022 and Latest SDK
         run: |
           $sdkVersion = "$env:WindowsSDKVersion".TrimEnd('\')
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
             [xml]$xml = Get-Content $_.FullName
+            
+            # Update Windows SDK Version
             $nodes = $xml.GetElementsByTagName('WindowsTargetPlatformVersion')
             foreach ($node in $nodes) {
               $node.InnerText = $sdkVersion
             }
+            
+            # Update Platform Toolset to v143 (VS 2022)
+            $toolsets = $xml.GetElementsByTagName('PlatformToolset')
+            foreach ($toolset in $toolsets) {
+              $toolset.InnerText = 'v143'
+            }
+            
             $xml.Save($_.FullName)
           }
         shell: pwsh
 
       - name: Build ScriptHookV
-        run: msbuild "ScriptHookV-master/ScriptHookV.sln" /p:Configuration=Release /p:Platform=x64
+        run: msbuild "ScriptHookV-master/ScriptHookV.sln" /p:Configuration=Release /p:Platform=x64 /restore
         shell: cmd
 
       - name: Build Heap Adjuster
-        run: msbuild "gtav-HeapAdjuster-ini-master/HeapAdjuster.sln" /p:Configuration=Release /p:Platform=x64
+        run: msbuild "gtav-HeapAdjuster-ini-master/HeapAdjuster.sln" /p:Configuration=Release /p:Platform=x64 /restore
         shell: cmd
 
       - name: Build Packfile Limit Adjuster
-        run: msbuild "PackfileLimitAdjusterEnhanced-master/PackfileLimitAdjuster.sln" /p:Configuration=Release /p:Platform=x64
+        run: msbuild "PackfileLimitAdjusterEnhanced-master/PackfileLimitAdjuster.sln" /p:Configuration=Release /p:Platform=x64 /restore
         shell: cmd
 
       - name: Build NativeUI
@@ -55,7 +64,7 @@ jobs:
         shell: pwsh
 
       - name: Build MenyooSP (Trainer)
-        run: msbuild "MenyooSP-master/Solution/Menyoo.sln" /p:Configuration=Release /p:Platform=x64
+        run: msbuild "MenyooSP-master/Solution/Menyoo.sln" /p:Configuration=Release /p:Platform=x64 /restore
         shell: cmd
 
       - name: Collect and Package Binaries
