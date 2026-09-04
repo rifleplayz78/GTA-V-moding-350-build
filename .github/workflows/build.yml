@@ -53,6 +53,14 @@ jobs:
         run: nuget restore "ScriptHookV-master/ScriptHookV.sln"
         shell: cmd
 
+      - name: Force-Build Missing Dependencies (StackWalker)
+        run: |
+          Get-ChildItem -Recurse -Filter *StackWalker*.vcxproj | ForEach-Object {
+            Write-Host "Found StackWalker project, compiling library automatically: $($_.FullName)"
+            msbuild $_.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:LanguageStandard=stdcpp17
+          }
+        shell: pwsh
+
       - name: Build ScriptHookV
         run: msbuild "ScriptHookV-master/ScriptHookV.sln" /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /p:TreatWarningsAsErrors=false /restore
         shell: cmd
