@@ -91,44 +91,13 @@ jobs:
           msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /p:TreatWarningsAsErrors=false /restore
         shell: pwsh
 
-      - name: "DEBUG: Find ScriptHookV Output Files"
+      - name: List ScriptHookV-master contents
         run: |
-          Write-Host "=== Searching for ScriptHookV files in workspace ==="
-          
-          Write-Host ""
-          Write-Host "Current working directory: $(Get-Location)"
-          Write-Host ""
-          
-          # List all directories in workspace
-          Write-Host "Top-level directories:"
-          Get-ChildItem -Directory | Select-Object -ExpandProperty Name
-          
-          Write-Host ""
-          Write-Host "=== Searching for ScriptHookV.h ==="
-          Get-ChildItem -Recurse -Filter "ScriptHookV.h" | ForEach-Object {
-            Write-Host "Found: $($_.FullName)"
-          }
-          
-          Write-Host ""
-          Write-Host "=== Searching for ScriptHookV.lib ==="
-          Get-ChildItem -Recurse -Filter "ScriptHookV.lib" | ForEach-Object {
-            Write-Host "Found: $($_.FullName)"
-          }
-          
-          Write-Host ""
-          Write-Host "=== Contents of ScriptHookV-master directory ==="
+          Write-Host "=== ScriptHookV-master directory structure ==="
           if (Test-Path "ScriptHookV-master") {
-            Get-ChildItem -Path "ScriptHookV-master" -Recurse -File -Filter "*.h" | Select-Object -First 20 -ExpandProperty FullName
+            Get-ChildItem -Path "ScriptHookV-master" -Recurse -File | Select-Object -ExpandProperty FullName | Sort-Object
           } else {
-            Write-Host "ScriptHookV-master directory not found"
-          }
-          
-          Write-Host ""
-          Write-Host "=== Contents of ScriptHookV-master/ScriptHookV directory ==="
-          if (Test-Path "ScriptHookV-master/ScriptHookV") {
-            Get-ChildItem -Path "ScriptHookV-master/ScriptHookV" -Recurse -File | Select-Object -ExpandProperty Name
-          } else {
-            Write-Host "Directory not found"
+            Write-Host "ScriptHookV-master folder not found in working directory."
           }
         shell: pwsh
 
