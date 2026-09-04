@@ -53,24 +53,35 @@ jobs:
         run: nuget restore "ScriptHookV-master/ScriptHookV.sln"
         shell: cmd
 
-      - name: Pre-compile StackWalker Dependency
+      - name: Compile StackWalker Library
         run: |
-          # Detect and isolate StackWalker dependency compilation before main solution build
+          # 1. Look for a standalone StackWalker vcxproj
           $stackWalkerProj = Get-ChildItem -Recurse -Filter *StackWalker*.vcxproj | Select-Object -First 1
+          
           if ($stackWalkerProj) {
-            Write-Host "Compiling StackWalker dependency directly: $($stackWalkerProj.FullName)"
+            Write-Host "Compiling StackWalker project..."
             msbuild $stackWalkerProj.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
-            
-            # Stage compiled StackWalker.lib in all relative linker lookup paths
-            $libs = Get-ChildItem -Recurse -Filter StackWalker.lib
-            foreach ($lib in $libs) {
-              Write-Host "Found compiled lib at: $($lib.FullName)"
-              Copy-Item $lib.FullName -Destination "ScriptHookV-master/ScriptHookV/" -Force -ErrorAction SilentlyContinue
-              Copy-Item $lib.FullName -Destination "ScriptHookV-master/" -Force -ErrorAction SilentlyContinue
-            }
           } else {
-            Write-Host "No standalone StackWalker project found; compiling via solution target..."
-            msbuild "ScriptHookV-master/ScriptHookV.sln" /t:StackWalker /p:Configuration=Release /p:Platform=x64
+            # 2. If no project exists, compile StackWalker.cpp directly via MSVC cl/lib toolchain
+            $stackWalkerCpp = Get-ChildItem -Recurse -Filter *StackWalker*.cpp | Select-Object -First 1
+            if ($stackWalkerCpp) {
+              Write-Host "Found $($stackWalkerCpp.FullName) — compiling to StackWalker.lib manually..."
+              $cppDir = $stackWalkerCpp.DirectoryName
+              Push-Location $cppDir
+              cl /c /EHsc /O2 /MD $stackWalkerCpp.Name
+              lib *.obj /OUT:StackWalker.lib
+              Pop-Location
+            } else {
+              Write-Host "No StackWalker source files found."
+            }
+          }
+
+          # Stage compiled StackWalker.lib into expected linker directories
+          $libs = Get-ChildItem -Recurse -Filter StackWalker.lib
+          foreach ($lib in $libs) {
+            Write-Host "Placing StackWalker.lib at target directory..."
+            Copy-Item $lib.FullName -Destination "ScriptHookV-master/ScriptHookV/" -Force -ErrorAction SilentlyContinue
+            Copy-Item $lib.FullName -Destination "ScriptHookV-master/" -Force -ErrorAction SilentlyContinue
           }
         shell: pwsh
 
