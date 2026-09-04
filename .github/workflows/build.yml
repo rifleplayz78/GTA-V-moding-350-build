@@ -23,10 +23,12 @@ jobs:
 
       - name: Retarget Windows SDK
         run: |
+          $sdkVersion = "$env:WindowsSDKVersion".TrimEnd('\')
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
             [xml]$xml = Get-Content $_.FullName
-            $xml.Project.PropertyGroup | Where-Object { $_.WindowsTargetPlatformVersion } | ForEach-Object {
-              $_.WindowsTargetPlatformVersion = "$env:WindowsSDKVersion".TrimEnd('\')
+            $nodes = $xml.GetElementsByTagName('WindowsTargetPlatformVersion')
+            foreach ($node in $nodes) {
+              $node.InnerText = $sdkVersion
             }
             $xml.Save($_.FullName)
           }
