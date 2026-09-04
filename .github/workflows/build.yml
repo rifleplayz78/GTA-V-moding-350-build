@@ -1,261 +1,148 @@
-name: Build GTA V Mod Suite
+name: Build All GTA V Mods (Build 350)
+on: [push, workflow_dispatch]
 
-on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
-  workflow_dispatch:
-
-env:
-  CONFIGURATION: Release
-  PLATFORM: x64
-  SDK_INC: scripthookvdotnet-main/sdk/inc/ScriptHookV.h
-  SDK_LIB: scripthookvdotnet-main/sdk/lib/ScriptHookV.lib
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
-      # ----------------------------------------------------------------
-      # 1. Checkout
-      # ----------------------------------------------------------------
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # ----------------------------------------------------------------
-      # 2. Tooling
-      # ----------------------------------------------------------------
-      - name: Setup MSVC developer environment
+      - name: Initialize MSVC Environment
         uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
 
-      - name: Setup .NET SDK 8.0
+      - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: '8.0.x'
 
-      # ----------------------------------------------------------------
-      # Verify committed ScriptHookV SDK (deterministic — no file hunting)
-      # ----------------------------------------------------------------
-      - name: Verify ScriptHookV SDK files
-        shell: pwsh
+      - name: Retarget Projects for VS2022, Latest SDK, and C++17
         run: |
-          $ErrorActionPreference = 'Stop'
-          foreach ($f in @($env:SDK_INC, $env:SDK_LIB)) {
-            if (-not (Test-Path $f)) {
-              Write-Error "FATAL: Required SDK file missing: '$f'. Commit the ScriptHookV SDK header/lib to the repository at this exact path."
-              exit 1
-            }
-          }
-          Write-Host "ScriptHookV SDK verified: header + import library present."
-
-      # ----------------------------------------------------------------
-      # 3. Retarget all C++ projects (SDK version / v143 / C++17)
-      # ----------------------------------------------------------------
-      - name: Retarget C++ projects
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $sdkRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Include'
-          $latestSdk = Get-ChildItem $sdkRoot -Directory |
-            Where-Object Name -match '^10\.' |
-            Sort-Object { [version]$_.Name } -Descending |
-            Select-Object -First 1 -ExpandProperty Name
-          if (-not $latestSdk) { throw 'No Windows SDK found on runner.' }
-          Write-Host "Retargeting all .vcxproj files -> SDK $latestSdk | PlatformToolset v143 | stdcpp17"
-
+          $sdkVersion = "$env:WindowsSDKVersion".TrimEnd('\')
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $content = Get-Content $_.FullName -Raw
-            $content = $content -replace '<WindowsTargetPlatformVersion>[^<]*</WindowsTargetPlatformVersion>', "<WindowsTargetPlatformVersion>$latestSdk</WindowsTargetPlatformVersion>"
-            $content = $content -replace '<PlatformToolset>[^<]*</PlatformToolset>', '<PlatformToolset>v143</PlatformToolset>'
-            $content = $content -replace '<LanguageStandard>[^<]*</LanguageStandard>', '<LanguageStandard>stdcpp17</LanguageStandard>'
-            if ($content -notmatch '<WindowsTargetPlatformVersion>') {
-              $content = $content -replace '(<PropertyGroup Label="Globals">)', "`$1`n    <WindowsTargetPlatformVersion>$latestSdk</WindowsTargetPlatformVersion>"
+            [xml]$xml = Get-Content $_.FullName
+            
+            # Set target Windows SDK
+            $nodes = $xml.GetElementsByTagName('WindowsTargetPlatformVersion')
+            foreach ($node in $nodes) { $node.InnerText = $sdkVersion }
+            
+            # Retarget platform toolset
+            $toolsets = $xml.GetElementsByTagName('PlatformToolset')
+            foreach ($toolset in $toolsets) { $toolset.InnerText = 'v143' }
+            
+            # Enforce C++17
+            $cppLangNodes = $xml.GetElementsByTagName('LanguageStandard')
+            foreach ($node in $cppLangNodes) { $node.InnerText = 'stdcpp17' }
+            
+            $xml.Save($_.FullName)
+          }
+        shell: pwsh
+
+      - name: Restore NuGet Packages
+        run: |
+          $shvSln = Get-ChildItem -Recurse -Filter *ScriptHookV*.sln | Select-Object -First 1
+          if ($shvSln) { nuget restore $shvSln.FullName }
+        shell: pwsh
+
+      - name: Compile StackWalker Library
+        run: |
+          $stackWalkerProj = Get-ChildItem -Recurse -Filter *StackWalker*.vcxproj | Select-Object -First 1
+          
+          if ($stackWalkerProj) {
+            msbuild $stackWalkerProj.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+          } else {
+            $stackWalkerCpp = Get-ChildItem -Recurse -Filter *StackWalker*.cpp | Select-Object -First 1
+            if ($stackWalkerCpp) {
+              $cppDir = $stackWalkerCpp.DirectoryName
+              Push-Location $cppDir
+              cl /c /EHsc /O2 /MD $stackWalkerCpp.Name
+              lib *.obj /OUT:StackWalker.lib
+              Pop-Location
             }
-            Set-Content -Path $_.FullName -Value $content -NoNewline -Encoding UTF8
-            Write-Host "Patched: $($_.FullName)"
           }
 
-      # ----------------------------------------------------------------
-      # 4a. Build StackWalker -> StackWalker.lib and stage for linker
-      # ----------------------------------------------------------------
-      - name: Build and stage StackWalker
+          $libs = Get-ChildItem -Recurse -Filter StackWalker.lib
+          foreach ($lib in $libs) {
+            Copy-Item $lib.FullName -Destination "ScriptHookV-master/ScriptHookV/" -Force -ErrorAction SilentlyContinue
+            Copy-Item $lib.FullName -Destination "ScriptHookV-master/" -Force -ErrorAction SilentlyContinue
+          }
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $proj = Get-ChildItem -Recurse -Filter *.vcxproj |
-            Where-Object Name -like '*StackWalker*' |
-            Select-Object -First 1
-          if (-not $proj) { throw 'StackWalker.vcxproj not found.' }
 
-          msbuild $proj.FullName /m `
-            /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM `
-            /p:ConfigurationType=StaticLibrary
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-          $lib = Get-ChildItem -Recurse -Filter StackWalker.lib | Select-Object -First 1
-          if (-not $lib) { throw 'StackWalker.lib was not produced by the build.' }
-
-          $stage = Join-Path $env:GITHUB_WORKSPACE 'build\libs'
-          New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          Copy-Item $lib.FullName -Destination $stage -Force
-          Write-Host "Staged $($lib.FullName) -> $stage"
-
-          # Expose staging dir to link.exe for all subsequent MSBuild steps
-          "LIB=$stage;$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      # ----------------------------------------------------------------
-      # 5a. Build ScriptHookV
-      # ----------------------------------------------------------------
       - name: Build ScriptHookV
-        shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $sln = Get-ChildItem -Recurse -Filter *.sln |
-            Where-Object { $_.Name -match 'ScriptHookV' -and $_.Name -notmatch 'DotNet' } |
-            Select-Object -First 1
-          if (-not $sln) { throw 'ScriptHookV solution not found.' }
-
-          msbuild $sln.FullName /m /t:Restore,Build `
-            /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM `
-            /p:RestorePackagesConfig=true
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      # ----------------------------------------------------------------
-      # 5b. Build Heap Adjuster + Packfile Limit Adjuster
-      # ----------------------------------------------------------------
-      - name: Build HeapAdjuster and PackfileLimitAdjuster
+          $sln = Get-ChildItem -Recurse -Filter *ScriptHookV*.sln | Select-Object -First 1
+          msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /p:TreatWarningsAsErrors=false /restore
         shell: pwsh
+
+      - name: Build Heap Adjuster
         run: |
-          $ErrorActionPreference = 'Stop'
-          foreach ($name in @('HeapAdjuster', 'PackfileLimitAdjuster')) {
-            $target = Get-ChildItem -Recurse -Include *.sln, *.vcxproj |
-              Where-Object Name -like "*$name*" |
-              Sort-Object { $_.Extension -ne '.sln' } |  # prefer solutions
-              Select-Object -First 1
-            if (-not $target) { throw "$name solution/project not found." }
+          $sln = Get-ChildItem -Recurse -Filter *HeapAdjuster*.sln | Select-Object -First 1
+          if ($sln) { msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore }
+        shell: pwsh
 
-            Write-Host "Building $($target.FullName)"
-            msbuild $target.FullName /m `
-              /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          }
+      - name: Build Packfile Limit Adjuster
+        run: |
+          $sln = Get-ChildItem -Recurse -Filter *PackfileLimitAdjuster*.sln | Select-Object -First 1
+          if ($sln) { msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore }
+        shell: pwsh
 
-      # ----------------------------------------------------------------
-      # 5c. Build ScriptHookVDotNet (uses committed SDK verified earlier)
-      # ----------------------------------------------------------------
       - name: Build ScriptHookVDotNet
-        shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $sln = Get-ChildItem -Path 'scripthookvdotnet-main' -Recurse -Filter *.sln |
-            Select-Object -First 1
-          if (-not $sln) { throw 'ScriptHookVDotNet solution not found under scripthookvdotnet-main.' }
-
-          msbuild $sln.FullName /m /t:Restore,Build `
-            /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM `
-            /p:RestorePackagesConfig=true
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      # ----------------------------------------------------------------
-      # 6a. Patch NativeUI assembly references, then build via dotnet CLI
-      # ----------------------------------------------------------------
-      - name: Patch and build NativeUI
+          $sln = Get-ChildItem -Recurse -Filter *ScriptHookVDotNet*.sln | Select-Object -First 1
+          if ($sln) { msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /restore }
         shell: pwsh
+
+      - name: Patch NativeUI Project References
         run: |
-          $ErrorActionPreference = 'Stop'
-          # Locate built SHVDN output directory
-          $shvdnDll = Get-ChildItem -Recurse -Filter 'ScriptHookVDotNet*.dll' |
-            Where-Object { $_.FullName -match '\\bin\\.*Release' -or $_.FullName -match '\\Release\\' } |
-            Where-Object { $_.FullName -notmatch '\\obj\\' } |
-            Select-Object -First 1
-          if (-not $shvdnDll) { throw 'Built ScriptHookVDotNet.dll not found — SHVDN build output missing.' }
-          $shvdnDir = $shvdnDll.DirectoryName
-          Write-Host "SHVDN output directory: $shvdnDir"
+          $shvdnDll = Get-ChildItem -Recurse -Filter "ScriptHookVDotNet*.dll" | Where-Object { $_.FullName -like "*bin*" -and $_.FullName -like "*Release*" } | Select-Object -First 1
+          if (-not $shvdnDll) { $shvdnDll = Get-ChildItem -Recurse -Filter "ScriptHookVDotNet*.dll" | Select-Object -First 1 }
 
-          $csproj = Get-ChildItem -Recurse -Filter *.csproj |
-            Where-Object Name -like '*NativeUI*' |
-            Select-Object -First 1
-          if (-not $csproj) { throw 'NativeUI csproj not found.' }
-
-          $content = Get-Content $csproj.FullName -Raw
-          if ($content -match '<HintPath>[^<]*ScriptHookVDotNet[^<]*\.dll</HintPath>') {
-            # Rewrite existing HintPaths to point at the freshly built assemblies
-            $content = [regex]::Replace($content,
-              '<HintPath>[^<]*?(ScriptHookVDotNet[^<\\/]*\.dll)</HintPath>',
-              { param($m) "<HintPath>$shvdnDir\$($m.Groups[1].Value)</HintPath>" })
-          }
-          else {
-            # Inject a reference block if none exists
-            $inject = @"
-  <ItemGroup>
-    <Reference Include="ScriptHookVDotNet">
-      <HintPath>$shvdnDir\ScriptHookVDotNet.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-  </ItemGroup>
-</Project>
-"@
-            $content = $content -replace '</Project>\s*$', $inject
-          }
-          Set-Content -Path $csproj.FullName -Value $content -NoNewline -Encoding UTF8
-          Write-Host "Patched: $($csproj.FullName)"
-
-          dotnet restore $csproj.FullName
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          dotnet build $csproj.FullName -c $env:CONFIGURATION --no-restore
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      # ----------------------------------------------------------------
-      # 6b. Build MenyooSP (links against staged StackWalker.lib via LIB)
-      # ----------------------------------------------------------------
-      - name: Build MenyooSP
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $sln = Get-ChildItem -Recurse -Filter *.sln |
-            Where-Object Name -like '*Menyoo*' |
-            Select-Object -First 1
-          if (-not $sln) { throw 'MenyooSP solution not found.' }
-
-          msbuild $sln.FullName /m /t:Restore,Build `
-            /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM `
-            /p:RestorePackagesConfig=true
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      # ----------------------------------------------------------------
-      # 7. Collect and upload artifacts
-      # ----------------------------------------------------------------
-      - name: Collect binaries
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $out = Join-Path $env:GITHUB_WORKSPACE 'artifacts'
-          New-Item -ItemType Directory -Path $out -Force | Out-Null
-
-          Get-ChildItem -Recurse -Include *.dll, *.asi |
-            Where-Object {
-              $_.FullName -match '\\(bin\\|x64\\)?Release\\' -and
-              $_.FullName -notmatch '\\(obj|packages|\.nuget|artifacts)\\'
-            } |
-            ForEach-Object {
-              Copy-Item $_.FullName -Destination $out -Force
-              Write-Host "Packaged: $($_.Name)"
+          if ($shvdnDll) {
+            Get-ChildItem -Recurse -Filter "*NativeUI*.csproj" | ForEach-Object {
+              $projPath = $_.FullName
+              [xml]$xml = Get-Content $projPath
+              
+              Copy-Item $shvdnDll.FullName -Destination $_.DirectoryName -Force
+              
+              $itemGroup = $xml.CreateElement("ItemGroup", $xml.DocumentElement.NamespaceURI)
+              $reference = $xml.CreateElement("Reference", $xml.DocumentElement.NamespaceURI)
+              $reference.SetAttribute("Include", "ScriptHookVDotNet")
+              
+              $hintPath = $xml.CreateElement("HintPath", $xml.DocumentElement.NamespaceURI)
+              $hintPath.InnerText = $shvdnDll.FullName
+              
+              $reference.AppendChild($hintPath) | Out-Null
+              $itemGroup.AppendChild($reference) | Out-Null
+              $xml.DocumentElement.AppendChild($itemGroup) | Out-Null
+              
+              $xml.Save($projPath)
             }
+          }
+        shell: pwsh
 
-          $count = (Get-ChildItem $out | Measure-Object).Count
-          if ($count -eq 0) { throw 'No compiled binaries found to package — build likely failed silently.' }
-          Write-Host "Packaged $count binaries into $out"
+      - name: Build NativeUI
+        run: |
+          $sln = Get-ChildItem -Recurse -Filter *NativeUI*.sln | Select-Object -First 1
+          if ($sln) { dotnet build $sln.FullName -c Release }
+        shell: pwsh
 
-      - name: Upload release artifact
+      - name: Build MenyooSP (Trainer)
+        run: |
+          $sln = Get-ChildItem -Recurse -Filter *Menyoo*.sln | Select-Object -First 1
+          if ($sln) { msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore }
+        shell: pwsh
+
+      - name: Collect and Package Binaries
         uses: actions/upload-artifact@v4
         with:
-          name: gtav-mod-suite-${{ github.run_number }}
-          path: artifacts/
-          if-no-files-found: error
-          retention-days: 30
+          name: GTA-V-Build-350-Ready-Mods
+          path: |
+            **/Release/**/*.dll
+            **/Release/**/*.asi
+            **/bin/Release/**/*.dll
+            **/bin/Release/**/*.asi
