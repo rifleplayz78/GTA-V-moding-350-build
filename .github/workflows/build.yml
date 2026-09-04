@@ -111,6 +111,57 @@ jobs:
           }
         shell: pwsh
 
+      - name: Build ScriptHookVDotNet (Prerequisite for NativeUI)
+        run: |
+          $sln = Get-ChildItem -Recurse -Filter *ScriptHookVDotNet*.sln | Select-Object -First 1
+          if ($sln) {
+            dotnet build $sln.FullName -c Release
+          } else {
+            Write-Warning "ScriptHookVDotNet solution file not found in workspace."
+          }
+        shell: pwsh
+
+      - name: Patch NativeUI Project References
+        run: |
+          # 1. Find the compiled ScriptHookVDotNet.dll
+          $shvdnDll = Get-ChildItem -Recurse -Filter "ScriptHookVDotNet*.dll" | Where-Object { $_.FullName -like "*bin*" -and $_.FullName -like "*Release*" } | Select-Object -First 1
+          
+          if (-not $shvdnDll) {
+            $shvdnDll = Get-ChildItem -Recurse -Filter "ScriptHookVDotNet*.dll" | Select-Object -First 1
+          }
+
+          if ($shvdnDll) {
+            Write-Host "Found ScriptHookVDotNet assembly at: $($shvdnDll.FullName)"
+            
+            # 2. Patch every NativeUI .csproj file to point explicitly to this DLL path
+            Get-ChildItem -Recurse -Filter "*NativeUI*.csproj" | ForEach-Object {
+              $projPath = $_.FullName
+              Write-Host "Injecting assembly reference into: $projPath"
+              
+              [xml]$xml = Get-Content $projPath
+              
+              # Copy DLL next to .csproj directory for local resolution
+              Copy-Item $shvdnDll.FullName -Destination $_.DirectoryName -Force
+              
+              # Create or append ItemGroup with explicit Reference and HintPath
+              $itemGroup = $xml.CreateElement("ItemGroup", $xml.DocumentElement.NamespaceURI)
+              $reference = $xml.CreateElement("Reference", $xml.DocumentElement.NamespaceURI)
+              $reference.SetAttribute("Include", "ScriptHookVDotNet")
+              
+              $hintPath = $xml.CreateElement("HintPath", $xml.DocumentElement.NamespaceURI)
+              $hintPath.InnerText = $shvdnDll.FullName
+              
+              $reference.AppendChild($hintPath) | Out-Null
+              $itemGroup.AppendChild($reference) | Out-Null
+              $xml.DocumentElement.AppendChild($itemGroup) | Out-Null
+              
+              $xml.Save($projPath)
+            }
+          } else {
+            Write-Warning "Could not locate ScriptHookVDotNet.dll to bind NativeUI."
+          }
+        shell: pwsh
+
       - name: Build NativeUI
         run: |
           $sln = Get-ChildItem -Recurse -Filter *NativeUI*.sln | Select-Object -First 1
@@ -118,16 +169,6 @@ jobs:
             dotnet build $sln.FullName -c Release
           } else {
             Write-Warning "NativeUI solution file not found in workspace."
-          }
-        shell: pwsh
-
-      - name: Build ScriptHookVDotNet
-        run: |
-          $sln = Get-ChildItem -Recurse -Filter *ScriptHookVDotNet*.sln | Select-Object -First 1
-          if ($sln) {
-            dotnet build $sln.FullName -c Release
-          } else {
-            Write-Warning "ScriptHookVDotNet solution file not found in workspace."
           }
         shell: pwsh
 
