@@ -27,19 +27,19 @@ jobs:
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
             [xml]$xml = Get-Content $_.FullName
             
-            # Update Windows SDK Version
+            # Set target Windows SDK dynamically from runner environment
             $nodes = $xml.GetElementsByTagName('WindowsTargetPlatformVersion')
             foreach ($node in $nodes) {
               $node.InnerText = $sdkVersion
             }
             
-            # Update Platform Toolset to v143 (VS 2022)
+            # Retarget platform toolset to VS 2022 (v143)
             $toolsets = $xml.GetElementsByTagName('PlatformToolset')
             foreach ($toolset in $toolsets) {
               $toolset.InnerText = 'v143'
             }
             
-            # Force C++17 standard to preserve legacy STL features like std::result_of
+            # Enforce C++17 standard to support legacy STL constructs like std::result_of
             $cppLangNodes = $xml.GetElementsByTagName('LanguageStandard')
             foreach ($node in $cppLangNodes) {
               $node.InnerText = 'stdcpp17'
@@ -53,11 +53,24 @@ jobs:
         run: nuget restore "ScriptHookV-master/ScriptHookV.sln"
         shell: cmd
 
-      - name: Force-Build Missing Dependencies (StackWalker)
+      - name: Pre-compile StackWalker Dependency
         run: |
-          Get-ChildItem -Recurse -Filter *StackWalker*.vcxproj | ForEach-Object {
-            Write-Host "Found StackWalker project, compiling library automatically: $($_.FullName)"
-            msbuild $_.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:LanguageStandard=stdcpp17
+          # Detect and isolate StackWalker dependency compilation before main solution build
+          $stackWalkerProj = Get-ChildItem -Recurse -Filter *StackWalker*.vcxproj | Select-Object -First 1
+          if ($stackWalkerProj) {
+            Write-Host "Compiling StackWalker dependency directly: $($stackWalkerProj.FullName)"
+            msbuild $stackWalkerProj.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+            
+            # Stage compiled StackWalker.lib in all relative linker lookup paths
+            $libs = Get-ChildItem -Recurse -Filter StackWalker.lib
+            foreach ($lib in $libs) {
+              Write-Host "Found compiled lib at: $($lib.FullName)"
+              Copy-Item $lib.FullName -Destination "ScriptHookV-master/ScriptHookV/" -Force -ErrorAction SilentlyContinue
+              Copy-Item $lib.FullName -Destination "ScriptHookV-master/" -Force -ErrorAction SilentlyContinue
+            }
+          } else {
+            Write-Host "No standalone StackWalker project found; compiling via solution target..."
+            msbuild "ScriptHookV-master/ScriptHookV.sln" /t:StackWalker /p:Configuration=Release /p:Platform=x64
           }
         shell: pwsh
 
