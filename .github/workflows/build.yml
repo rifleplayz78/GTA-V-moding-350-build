@@ -93,69 +93,98 @@ jobs:
 
       - name: Stage ScriptHookV Files for ScriptHookVDotNet
         run: |
+          Write-Host "=== DEBUG: Locating ScriptHookV files ==="
           Write-Host "Current directory: $(Get-Location)"
           Write-Host "Workspace: ${{github.workspace}}"
           
-          # Locate ScriptHookV header, library, and dll files across workspace
-          $shvHeader = Get-ChildItem -Recurse -Filter "ScriptHookV.h" | Select-Object -First 1
-          $shvLib    = Get-ChildItem -Recurse -Filter "ScriptHookV.lib" | Select-Object -First 1
-          $shvDll    = Get-ChildItem -Recurse -Filter "ScriptHookV.dll" | Select-Object -First 1
-          
-          Write-Host "Found ScriptHookV.h: $($shvHeader.FullName)"
-          Write-Host "Found ScriptHookV.lib: $($shvLib.FullName)"
-          Write-Host "Found ScriptHookV.dll: $($shvDll.FullName)"
-          
-          # Use absolute path for scripthookvdotnet-main
-          $shvdnTargetDir = Join-Path "${{github.workspace}}" "scripthookvdotnet-main"
-          
-          Write-Host "Target directory: $shvdnTargetDir"
-          
-          if (Test-Path $shvdnTargetDir) {
-            Write-Host "Found scripthookvdotnet-main directory"
-            
-            $sdkDir = Join-Path $shvdnTargetDir "sdk"
-            $sdkIncDir = Join-Path $shvdnTargetDir "sdk\inc"
-            $libDir = Join-Path $shvdnTargetDir "lib"
-            
-            New-Item -ItemType Directory -Path $sdkDir -Force | Out-Null
-            New-Item -ItemType Directory -Path $sdkIncDir -Force | Out-Null
-            New-Item -ItemType Directory -Path $libDir -Force | Out-Null
-            
-            $copyCount = 0
-            
-            if ($shvHeader) {
-              Copy-Item $shvHeader.FullName -Destination $sdkIncDir -Force -ErrorAction Stop
-              Write-Host "✓ Copied ScriptHookV.h to $sdkIncDir"
-              $copyCount++
-            } else {
-              Write-Error "ScriptHookV.h not found!"
-              exit 1
-            }
-            
-            if ($shvLib) {
-              Copy-Item $shvLib.FullName -Destination $sdkDir -Force -ErrorAction Stop
-              Copy-Item $shvLib.FullName -Destination $libDir -Force -ErrorAction Stop
-              Write-Host "✓ Copied ScriptHookV.lib to $sdkDir and $libDir"
-              $copyCount++
-            } else {
-              Write-Error "ScriptHookV.lib not found!"
-              exit 1
-            }
-            
-            if ($shvDll) {
-              Copy-Item $shvDll.FullName -Destination $sdkDir -Force -ErrorAction Stop
-              Write-Host "✓ Copied ScriptHookV.dll to $sdkDir"
-              $copyCount++
-            } else {
-              Write-Warning "ScriptHookV.dll not found (may not be required)"
-            }
-            
-            Write-Host "ScriptHookV SDK staging completed successfully ($copyCount files copied)."
+          # Search for files across workspace
+          Write-Host ""
+          Write-Host "Searching for ScriptHookV.h..."
+          $shvHeader = Get-ChildItem -Recurse -Filter "ScriptHookV.h" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($shvHeader) {
+            Write-Host "✓ Found: $($shvHeader.FullName)"
           } else {
-            Write-Error "scripthookvdotnet-main directory not found at: $shvdnTargetDir"
-            Get-ChildItem "$(Split-Path $shvdnTargetDir)" | Write-Host
+            Write-Host "✗ NOT FOUND"
+          }
+          
+          Write-Host ""
+          Write-Host "Searching for ScriptHookV.lib..."
+          $shvLib = Get-ChildItem -Recurse -Filter "ScriptHookV.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($shvLib) {
+            Write-Host "✓ Found: $($shvLib.FullName)"
+          } else {
+            Write-Host "✗ NOT FOUND"
+          }
+          
+          Write-Host ""
+          Write-Host "Searching for ScriptHookV.dll..."
+          $shvDll = Get-ChildItem -Recurse -Filter "ScriptHookV.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($shvDll) {
+            Write-Host "✓ Found: $($shvDll.FullName)"
+          } else {
+            Write-Host "ℹ NOT FOUND (may not be required)"
+          }
+          
+          # Resolve target path using github workspace
+          $shvdnTargetDir = Join-Path "${{github.workspace}}" "scripthookvdotnet-main"
+          Write-Host ""
+          Write-Host "Target SDK directory: $shvdnTargetDir"
+          
+          if (-not (Test-Path $shvdnTargetDir)) {
+            Write-Error "scripthookvdotnet-main directory not found!"
             exit 1
           }
+          
+          # Match ScriptHookVDotNet.vcxproj requirements (sdk\inc and sdk\lib)
+          $sdkDir = Join-Path $shvdnTargetDir "sdk"
+          $sdkIncDir = Join-Path $shvdnTargetDir "sdk\inc"
+          $libDir = Join-Path $shvdnTargetDir "sdk\lib"
+          
+          Write-Host ""
+          Write-Host "Creating directories..."
+          New-Item -ItemType Directory -Path $sdkIncDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $libDir -Force | Out-Null
+          Write-Host "✓ Created $sdkIncDir"
+          Write-Host "✓ Created $libDir"
+          
+          Write-Host ""
+          Write-Host "=== COPYING FILES ==="
+          
+          if (-not $shvHeader) {
+            Write-Error "FATAL: ScriptHookV.h not found in workspace!"
+            exit 1
+          }
+          Copy-Item $shvHeader.FullName -Destination $sdkIncDir -Force
+          Write-Host "✓ Copied $($shvHeader.Name) to sdk\inc"
+          
+          if (-not $shvLib) {
+            Write-Error "FATAL: ScriptHookV.lib not found in workspace!"
+            exit 1
+          }
+          Copy-Item $shvLib.FullName -Destination $libDir -Force
+          Write-Host "✓ Copied $($shvLib.Name) to sdk\lib"
+          
+          if ($shvDll) {
+            Copy-Item $shvDll.FullName -Destination $sdkDir -Force
+            Write-Host "✓ Copied $($shvDll.Name) to sdk"
+          }
+          
+          # Verify files were staged properly
+          Write-Host ""
+          Write-Host "=== VERIFICATION ==="
+          $copiedHeaders = Get-ChildItem -Path $sdkIncDir -Filter "*.h" -ErrorAction SilentlyContinue
+          $copiedLibs = Get-ChildItem -Path $libDir -Filter "*.lib" -ErrorAction SilentlyContinue
+          
+          Write-Host "Headers in sdk\inc: $($copiedHeaders.Count)"
+          Write-Host "Libraries in sdk\lib: $($copiedLibs.Count)"
+          
+          if ($copiedHeaders.Count -eq 0 -or $copiedLibs.Count -eq 0) {
+            Write-Error "File copy verification FAILED!"
+            exit 1
+          }
+          
+          Write-Host ""
+          Write-Host "✓ SDK staging completed successfully!"
         shell: pwsh
 
       - name: Build Heap Adjuster
