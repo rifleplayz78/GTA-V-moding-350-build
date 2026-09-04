@@ -16,245 +16,170 @@ jobs:
       - name: Initialize MSVC Environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Locate Visual Studio MSBuild and set MSBUILD_PATH
-        shell: pwsh
-        run: |
-          Write-Host "Locating Visual Studio MSBuild via vswhere..."
-          $vswhere = Join-Path $env:ProgramFiles(x86) 'Microsoft Visual Studio\Installer\vswhere.exe'
-          if (-not (Test-Path $vswhere)) {
-            Write-Error "vswhere.exe not found at $vswhere. Visual Studio may not be installed on the runner."
-            exit 1
-          }
-
-          $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
-          if (-not $msbuild) {
-            Write-Error "MSBuild.exe not found via vswhere. Ensure Visual Studio or Build Tools with MSBuild is present."
-            exit 1
-          }
-
-          Write-Host "MSBuild located at: $msbuild"
-          "MSBUILD_PATH=$msbuild" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
       - name: Retarget Projects for VS2022, Latest SDK, and C++17
-        shell: pwsh
         run: |
-          function Retarget-VcxprojFile {
-            param($filePath, $sdkVersion, $toolset = 'v143', $langStandard = 'stdcpp17')
-
-            Write-Host "Retargeting: $filePath"
-            try {
-              [xml]$xml = Get-Content -Raw -Path $filePath
-            } catch {
-              Write-Warning "Failed to parse XML: $filePath — $_"
-              return
-            }
-
-            $ns = $xml.DocumentElement.NamespaceURI
-            $changed = $false
-
-            $windowsNodes = $xml.GetElementsByTagName('WindowsTargetPlatformVersion')
-            foreach ($n in $windowsNodes) {
-              if ($n.InnerText -ne $sdkVersion) {
-                $n.InnerText = $sdkVersion
-                $changed = $true
-              }
-            }
-
-            $toolsetNodes = $xml.GetElementsByTagName('PlatformToolset')
-            foreach ($n in $toolsetNodes) {
-              if ($n.InnerText -ne $toolset) {
-                $n.InnerText = $toolset
-                $changed = $true
-              }
-            }
-
-            $langNodes = $xml.GetElementsByTagName('LanguageStandard')
-            if ($langNodes.Count -eq 0) {
-              # Add LanguageStandard under first PropertyGroup that contains Configuration
-              $pg = $xml.Project.PropertyGroup | Where-Object { $_.Configuration -ne $null } | Select-Object -First 1
-              if ($pg -ne $null) {
-                $elem = $xml.CreateElement('LanguageStandard', $ns)
-                $elem.InnerText = $langStandard
-                $pg.AppendChild($elem) | Out-Null
-                $changed = $true
-              }
-            } else {
-              foreach ($n in $langNodes) {
-                if ($n.InnerText -ne $langStandard) {
-                  $n.InnerText = $langStandard
-                  $changed = $true
-                }
-              }
-            }
-
-            if ($changed) {
-              $xml.Save($filePath)
-              Write-Host "Saved retargeted project: $filePath"
-            } else {
-              Write-Host "No changes needed for: $filePath"
-            }
-          }
-
-          $sdkVersion = $env:WindowsSDKVersion
-          if ([string]::IsNullOrWhiteSpace($sdkVersion)) {
-            # fallback if WindowsSDKVersion not set
-            $sdkVersion = '10.0.22621.0'
-            Write-Host "WindowsSDKVersion not present in runner environment; falling back to $sdkVersion"
-          } else {
-            Write-Host "Using WindowsSDKVersion from environment: $sdkVersion"
-          }
-
+          $sdkVersion = "$env:WindowsSDKVersion".TrimEnd('\')
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            Retarget-VcxprojFile -filePath $_.FullName -sdkVersion $sdkVersion
+            [xml]$xml = Get-Content $_.FullName
+            
+            # Set target Windows SDK dynamically from runner environment
+            $nodes = $xml.GetElementsByTagName('WindowsTargetPlatformVersion')
+            foreach ($node in $nodes) {
+              $node.InnerText = $sdkVersion
+            }
+            
+            # Retarget platform toolset to VS 2022 (v143)
+            $toolsets = $xml.GetElementsByTagName('PlatformToolset')
+            foreach ($toolset in $toolsets) {
+              $toolset.InnerText = 'v143'
+            }
+            
+            # Enforce C++17 standard to support legacy STL constructs like std::result_of
+            $cppLangNodes = $xml.GetElementsByTagName('LanguageStandard')
+            foreach ($node in $cppLangNodes) {
+              $node.InnerText = 'stdcpp17'
+            }
+            
+            $xml.Save($_.FullName)
           }
+        shell: pwsh
 
       - name: Restore NuGet Packages
-        shell: pwsh
         run: |
           $shvSln = Get-ChildItem -Recurse -Filter *ScriptHookV*.sln | Select-Object -First 1
-          if ($shvSln) {
-            Write-Host "Restoring NuGet for solution: $($shvSln.FullName)"
-            nuget restore $shvSln.FullName
-          } else {
-            Write-Warning "ScriptHookV solution not found; skipping NuGet restore."
-          }
+          if ($shvSln) { nuget restore $shvSln.FullName }
+        shell: pwsh
 
       - name: Compile StackWalker Library
-        shell: pwsh
         run: |
           $stackWalkerProj = Get-ChildItem -Recurse -Filter *StackWalker*.vcxproj | Select-Object -First 1
+          
           if ($stackWalkerProj) {
-            Write-Host "Compiling StackWalker project: $($stackWalkerProj.FullName)"
-            & $env:MSBUILD_PATH $stackWalkerProj.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /m /verbosity:minimal
+            Write-Host "Compiling StackWalker project..."
+            msbuild $stackWalkerProj.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
           } else {
             $stackWalkerCpp = Get-ChildItem -Recurse -Filter *StackWalker*.cpp | Select-Object -First 1
             if ($stackWalkerCpp) {
               Write-Host "Found $($stackWalkerCpp.FullName) — compiling to StackWalker.lib manually..."
-              Push-Location $stackWalkerCpp.DirectoryName
+              $cppDir = $stackWalkerCpp.DirectoryName
+              Push-Location $cppDir
               cl /c /EHsc /O2 /MD $stackWalkerCpp.Name
               lib *.obj /OUT:StackWalker.lib
               Pop-Location
             } else {
-              Write-Warning "No StackWalker source files found."
+              Write-Host "No StackWalker source files found."
             }
           }
 
-          # Stage compiled StackWalker.lib into expected linker directories (best-effort)
-          $libs = Get-ChildItem -Recurse -Filter StackWalker.lib -ErrorAction SilentlyContinue
+          # Stage compiled StackWalker.lib into expected linker directories
+          $libs = Get-ChildItem -Recurse -Filter StackWalker.lib
           foreach ($lib in $libs) {
-            Write-Host "Placing StackWalker.lib at target directory: $($lib.FullName)"
+            Write-Host "Placing StackWalker.lib at target directory..."
             Copy-Item $lib.FullName -Destination "ScriptHookV-master/ScriptHookV/" -Force -ErrorAction SilentlyContinue
             Copy-Item $lib.FullName -Destination "ScriptHookV-master/" -Force -ErrorAction SilentlyContinue
           }
+        shell: pwsh
 
       - name: Build ScriptHookV
-        shell: pwsh
         run: |
           $sln = Get-ChildItem -Recurse -Filter *ScriptHookV*.sln | Select-Object -First 1
-          if (-not $sln) { Write-Error "ScriptHookV solution not found."; exit 1 }
-          Write-Host "Building ScriptHookV: $($sln.FullName)"
-          & $env:MSBUILD_PATH $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /p:TreatWarningsAsErrors=false /m /verbosity:minimal /restore
+          msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /p:TreatWarningsAsErrors=false /restore
+        shell: pwsh
 
       - name: Build Heap Adjuster
-        shell: pwsh
         run: |
           $sln = Get-ChildItem -Recurse -Filter *HeapAdjuster*.sln | Select-Object -First 1
           if ($sln) {
-            Write-Host "Building HeapAdjuster: $($sln.FullName)"
-            & $env:MSBUILD_PATH $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /m /verbosity:minimal /restore
+            msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore
           } else {
             Write-Warning "HeapAdjuster solution file not found in workspace."
           }
+        shell: pwsh
 
       - name: Build Packfile Limit Adjuster
-        shell: pwsh
         run: |
           $sln = Get-ChildItem -Recurse -Filter *PackfileLimitAdjuster*.sln | Select-Object -First 1
           if ($sln) {
-            Write-Host "Building PackfileLimitAdjuster: $($sln.FullName)"
-            & $env:MSBUILD_PATH $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /m /verbosity:minimal /restore
+            msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore
           } else {
             Write-Warning "PackfileLimitAdjuster solution file not found in workspace."
           }
-
-      - name: Build ScriptHookVDotNet (MSBuild for C++ Support)
         shell: pwsh
+
+      - name: Build ScriptHookVDotNet (Using MSBuild for C++ Support)
         run: |
           $sln = Get-ChildItem -Recurse -Filter *ScriptHookVDotNet*.sln | Select-Object -First 1
           if ($sln) {
-            Write-Host "Building ScriptHookVDotNet using Visual Studio MSBuild: $($sln.FullName)"
-            & $env:MSBUILD_PATH $sln.FullName /p:Configuration=Release /p:Platform=x64 /m /verbosity:minimal /restore
+            Write-Host "Building ScriptHookVDotNet via MSBuild: $($sln.FullName)"
+            msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /restore
           } else {
             Write-Warning "ScriptHookVDotNet solution file not found in workspace."
           }
+        shell: pwsh
 
       - name: Patch NativeUI Project References
-        shell: pwsh
         run: |
+          # Locate built ScriptHookVDotNet assembly
           $shvdnDll = Get-ChildItem -Recurse -Filter "ScriptHookVDotNet*.dll" | Where-Object { $_.FullName -like "*bin*" -and $_.FullName -like "*Release*" } | Select-Object -First 1
+          
           if (-not $shvdnDll) {
             $shvdnDll = Get-ChildItem -Recurse -Filter "ScriptHookVDotNet*.dll" | Select-Object -First 1
           }
 
           if ($shvdnDll) {
             Write-Host "Found ScriptHookVDotNet assembly at: $($shvdnDll.FullName)"
+            
+            # Patch every NativeUI .csproj file to reference the generated DLL
             Get-ChildItem -Recurse -Filter "*NativeUI*.csproj" | ForEach-Object {
               $projPath = $_.FullName
               Write-Host "Injecting assembly reference into: $projPath"
-              try {
-                [xml]$xml = Get-Content -Raw -Path $projPath
-              } catch {
-                Write-Warning "Failed to parse $projPath — $_"
-                return
-              }
-
-              # copy the dll next to the project so HintPath can use a relative path
+              
+              [xml]$xml = Get-Content $projPath
+              
               Copy-Item $shvdnDll.FullName -Destination $_.DirectoryName -Force
-
-              $ns = $xml.DocumentElement.NamespaceURI
-              $itemGroup = $xml.CreateElement("ItemGroup", $ns)
-              $reference = $xml.CreateElement("Reference", $ns)
+              
+              $itemGroup = $xml.CreateElement("ItemGroup", $xml.DocumentElement.NamespaceURI)
+              $reference = $xml.CreateElement("Reference", $xml.DocumentElement.NamespaceURI)
               $reference.SetAttribute("Include", "ScriptHookVDotNet")
-
-              $hintPath = $xml.CreateElement("HintPath", $ns)
-              $relativeHintPath = (Join-Path -Path '.' -ChildPath (Split-Path -Leaf $shvdnDll.FullName))
-              $hintPath.InnerText = $relativeHintPath
-
+              
+              $hintPath = $xml.CreateElement("HintPath", $xml.DocumentElement.NamespaceURI)
+              $hintPath.InnerText = $shvdnDll.FullName
+              
               $reference.AppendChild($hintPath) | Out-Null
               $itemGroup.AppendChild($reference) | Out-Null
               $xml.DocumentElement.AppendChild($itemGroup) | Out-Null
+              
               $xml.Save($projPath)
             }
           } else {
             Write-Warning "Could not locate ScriptHookVDotNet.dll to bind NativeUI."
           }
+        shell: pwsh
 
       - name: Build NativeUI
-        shell: pwsh
         run: |
           $sln = Get-ChildItem -Recurse -Filter *NativeUI*.sln | Select-Object -First 1
           if ($sln) {
-            Write-Host "Building NativeUI with dotnet: $($sln.FullName)"
             dotnet build $sln.FullName -c Release
           } else {
             Write-Warning "NativeUI solution file not found in workspace."
           }
+        shell: pwsh
 
       - name: Build MenyooSP (Trainer)
-        shell: pwsh
         run: |
           $sln = Get-ChildItem -Recurse -Filter *Menyoo*.sln | Select-Object -First 1
           if ($sln) {
-            Write-Host "Building Menyoo: $($sln.FullName)"
-            & $env:MSBUILD_PATH $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /m /verbosity:minimal /restore
+            msbuild $sln.FullName /p:Configuration=Release /p:Platform=x64 /p:DisableSpecificWarnings=4834 /restore
           } else {
             Write-Warning "Menyoo solution file not found in workspace."
           }
+        shell: pwsh
 
       - name: Collect and Package Binaries
         uses: actions/upload-artifact@v4
