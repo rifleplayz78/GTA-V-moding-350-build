@@ -21,20 +21,28 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Retarget Projects for VS2022 and Latest SDK
+      - name: Retarget Projects for VS2022, Latest SDK, and C++17
         run: |
           $sdkVersion = "$env:WindowsSDKVersion".TrimEnd('\')
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
             [xml]$xml = Get-Content $_.FullName
             
+            # Update Windows SDK Version
             $nodes = $xml.GetElementsByTagName('WindowsTargetPlatformVersion')
             foreach ($node in $nodes) {
               $node.InnerText = $sdkVersion
             }
             
+            # Update Platform Toolset to v143 (VS 2022)
             $toolsets = $xml.GetElementsByTagName('PlatformToolset')
             foreach ($toolset in $toolsets) {
               $toolset.InnerText = 'v143'
+            }
+            
+            # Force C++17 standard to preserve legacy STL features like std::result_of
+            $cppLangNodes = $xml.GetElementsByTagName('LanguageStandard')
+            foreach ($node in $cppLangNodes) {
+              $node.InnerText = 'stdcpp17'
             }
             
             $xml.Save($_.FullName)
