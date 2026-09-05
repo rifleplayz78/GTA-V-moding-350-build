@@ -21,18 +21,20 @@ jobs:
     - name: Restore NuGet Packages
       uses: nuget/setup-nuget@v1
 
+    # Fixed: Added the correct subfolder path for NuGet restore
     - name: Restore Dependencies
-      run: nuget restore ScriptHookV.sln
+      run: nuget restore ScriptHookV-master/ScriptHookV.sln
 
+    # Fixed: Added the correct subfolder path for the MSBuild compilation step
     - name: Build Release Configuration
-      run: msbuild ScriptHookV.sln /p:Configuration=Release /p:Platform=x64 /m
+      run: msbuild ScriptHookV-master/ScriptHookV.sln /p:Configuration=Release /p:Platform=x64 /m
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ScriptHookV-Binaries
-        # Corrected paths to ensure it grabs the actual compiled x64 binaries
+        # Fixed: Adjusted search scope paths to capture the files from inside the subfolder structure
         path: |
-          x64/Release/*.dll
-          x64/Release/*.asi
+          ScriptHookV-master/x64/Release/*.dll
+          ScriptHookV-master/x64/Release/*.asi
         if-no-files-found: warn
