@@ -24,9 +24,16 @@ jobs:
     - name: Restore Dependencies
       run: nuget restore ScriptHookV-master/ScriptHookV.sln
 
-    # Fixed: Added /p:PlatformToolset=v143 to retarget the legacy 2017 compiler configuration
+    # Fixed: Added AdditionalOptions="/std:c++14" to bring back std::result_of support
     - name: Build Release Configuration
-      run: msbuild ScriptHookV-master/ScriptHookV.sln /p:Configuration=Release /p:Platform=x64 /p:WindowsTargetPlatformVersion=10.0 /p:PlatformToolset=v143 /m
+      run: |
+        msbuild ScriptHookV-master/ScriptHookV.sln `
+          /p:Configuration=Release `
+          /p:Platform=x64 `
+          /p:WindowsTargetPlatformVersion=10.0 `
+          /p:PlatformToolset=v143 `
+          /p:AdditionalOptions="/std:c++14" `
+          /m
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
