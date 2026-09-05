@@ -24,9 +24,9 @@ jobs:
     - name: Restore Dependencies
       run: nuget restore ScriptHookV-master/ScriptHookV.sln
 
-    # Fixed: Added /p:WindowsTargetPlatformVersion=10.0 to automatically retarget the old SDKs
+    # Fixed: Added /p:PlatformToolset=v143 to retarget the legacy 2017 compiler configuration
     - name: Build Release Configuration
-      run: msbuild ScriptHookV-master/ScriptHookV.sln /p:Configuration=Release /p:Platform=x64 /p:WindowsTargetPlatformVersion=10.0 /m
+      run: msbuild ScriptHookV-master/ScriptHookV.sln /p:Configuration=Release /p:Platform=x64 /p:WindowsTargetPlatformVersion=10.0 /p:PlatformToolset=v143 /m
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
