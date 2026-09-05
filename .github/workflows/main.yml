@@ -21,19 +21,17 @@ jobs:
     - name: Restore NuGet Packages
       uses: nuget/setup-nuget@v1
 
-    # Fixed: Added the correct subfolder path for NuGet restore
     - name: Restore Dependencies
       run: nuget restore ScriptHookV-master/ScriptHookV.sln
 
-    # Fixed: Added the correct subfolder path for the MSBuild compilation step
+    # Fixed: Added /p:WindowsTargetPlatformVersion=10.0 to automatically retarget the old SDKs
     - name: Build Release Configuration
-      run: msbuild ScriptHookV-master/ScriptHookV.sln /p:Configuration=Release /p:Platform=x64 /m
+      run: msbuild ScriptHookV-master/ScriptHookV.sln /p:Configuration=Release /p:Platform=x64 /p:WindowsTargetPlatformVersion=10.0 /m
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ScriptHookV-Binaries
-        # Fixed: Adjusted search scope paths to capture the files from inside the subfolder structure
         path: |
           ScriptHookV-master/x64/Release/*.dll
           ScriptHookV-master/x64/Release/*.asi
