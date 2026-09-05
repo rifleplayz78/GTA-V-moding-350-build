@@ -56,10 +56,10 @@ int GTAVersion::ReadVersionString()
     }
 
     versionString = FMT("%d.%d.%d.%d"
-        , pvi->dwProductVersionMS >> 16
-        , pvi->dwProductVersionMS & 0xFFFF
-        , pvi->dwFileVersionMS >> 16
-        , pvi->dwFileVersionLS >> 16);
+        , HIWORD(pvi->dwProductVersionMS)
+        , LOWORD(pvi->dwProductVersionMS)
+        , HIWORD(pvi->dwProductVersionLS)
+        , LOWORD(pvi->dwProductVersionLS));
 
     return 0;
 }
