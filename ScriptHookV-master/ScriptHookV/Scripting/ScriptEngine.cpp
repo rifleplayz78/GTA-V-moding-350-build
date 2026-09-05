@@ -7,6 +7,7 @@
 #include "..\Input\InputHook.h"
 #include "..\DirectX\D3d11Hook.h"
 #include "..\Hooking\Hooking.h"
+#include "..\Utility\Versioning.h"
 
 #include "..\..\SDK\inc\enums.h"
 
@@ -14,7 +15,7 @@ struct GlobalTable
 {
 	PINT64* GlobalBasePtr;
 	PINT64 AddressOf(int index) const { return &GlobalBasePtr[index >> 18 & 0x3F][index & 0x3FFFF]; }
-	bool IsInitialised()const { return *GlobalBasePtr; }
+	bool IsInitialised() const { return *GlobalBasePtr; }
 };	
 
 GlobalTable		globalTable;
@@ -34,7 +35,7 @@ bool ScriptEngine::Initialize()
 		return false;
 	}
 
-	// kill this data snoop ( must  be done after D3D )
+	// kill this data snoop ( must be done after D3D )
 	if (Utility::GetProcessID("GTAVLauncher.exe"))
 	{
 		Utility::killProcessByName("GTAVLauncher.exe");
@@ -47,6 +48,9 @@ bool ScriptEngine::Initialize()
 		LOG_ERROR("Failed to Initialize InputHook");
 		return false;
 	}
+
+	// Sync global game version tracking
+	g_GameVersion = GTAVersion::GetInstance().GameVersion();
 
 	// Get game state
 	if (auto gameStatePattern = "83 3D ? ? ? ? ? 8A D9 74 0A"_Scan)
