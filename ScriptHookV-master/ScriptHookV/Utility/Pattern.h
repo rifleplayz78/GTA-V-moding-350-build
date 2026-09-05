@@ -10,13 +10,18 @@ namespace mem
 		template <typename...>
 		using void_t = void;
 
+		// --- FIX #1: std::result_of was removed in C++20. ---
+		// Replaced with a SFINAE check based on decltype/std::declval that
+		// decomposes the "Callable(Args...)" function-type syntax directly,
+		// preserving the exact same usage pattern as before:
+		//   is_invocable<Invoker(void*)>::value
 		template <typename Function, typename = void>
 		struct is_invocable
 			: std::false_type
 		{ };
 
-		template <typename Function>
-		struct is_invocable<Function, void_t<typename std::result_of<Function>::type>>
+		template <typename Callable, typename... Args>
+		struct is_invocable<Callable(Args...), void_t<decltype(std::declval<Callable>()(std::declval<Args>()...))>>
 			: std::true_type
 		{ };
 
@@ -355,6 +360,7 @@ namespace mem
 			return nullptr;
 		}
 
+		// --- FIX #2: completed truncated scan_all loop ---
 		std::vector<handle> scan_all(const handle base, const handle end) const
 		{
 			std::vector<handle> results;
