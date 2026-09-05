@@ -68,7 +68,19 @@ bool ScriptEngine::Initialize()
 	if (auto globalTablePattern = "4C 8D 05 ? ? ? ? 4D 8B 08 4D 85 C9 74 11"_Scan)
 	{
 		globalTable.GlobalBasePtr = globalTablePattern.add(3).rip(4).as<PINT64*>();
-		while (!globalTable.IsInitialised()) Sleep(100);
+		
+		// SAFETY TIMEOUT: Prevents an infinite loop if the table fails to populate
+		int globalTimeout = 0;
+		while (!globalTable.IsInitialised()) 
+		{
+			Sleep(100);
+			globalTimeout++;
+			if (globalTimeout > 100) // Stops after 10 seconds of waiting
+			{
+				LOG_ERROR("Global table initialization timed out!");
+				return false;
+			}
+		}
 		LOG_ADDRESS("globalTable", globalTable.GlobalBasePtr);
 	}
 	else
@@ -77,7 +89,18 @@ bool ScriptEngine::Initialize()
 		return false;
 	}
 
-	while (GetGameState() != GameStatePlaying) Sleep(100);
+	// SAFETY TIMEOUT: Prevents getting stuck if the game state is unreadable or hangs
+	int stateTimeout = 0;
+	while (GetGameState() != GameStatePlaying) 
+	{
+		Sleep(100);
+		stateTimeout++;
+		if (stateTimeout > 600) // Stops after 60 seconds (1 minute) of loading
+		{
+			LOG_ERROR("Timed out waiting for GameStatePlaying!");
+			return false;
+		}
+	}
 
 	LOG_PRINT("Performing function hooking...");
 	
