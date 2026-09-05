@@ -24,34 +24,44 @@ jobs:
     - name: Restore Dependencies
       run: nuget restore ScriptHookV-master/ScriptHookV.sln
 
-    # Automatically upgrades Pattern.h syntax before compiling
-    - name: Upgrade Pattern.h Legacies
+    # Automated step to fix the explicit HMODULE casting constraint mismatch inside Pattern.h
+    - name: Patch Pattern.h HMODULE Compilation Error
       shell: powershell
       run: |
         $patternPath = "ScriptHookV-master/ScriptHookV/Utility/Pattern.h"
         if (Test-Path $patternPath) {
-            $content = Get-Content $patternPath
+            $content = Get-Content $patternPath -Raw
             
-            # Step 1: Force compiler to bring back removed traits
-            $macroPatch = @(
-                "#define _HAS_FEATURES_REMOVED_IN_CXX20 1",
-                "#include <type_traits>"
-            )
-            $content = $macroPatch + $content
+            # Target the structural module mapping methods to return a wrapped mem::handle object
+            $oldNamedA = "return GetModuleHandleA(name);"
+            $newNamedA = "return mem::handle(GetModuleHandleA(name));"
             
-            # Step 2: Swap the broken HMODULE declaration logic
-            $oldHmodule = "mem::module mod = GetModuleHandleA(NULL);"
-            $newHmodule = "mem::module mod = mem::module(reinterpret_cast<uintptr_t>(GetModuleHandleA(NULL)));"
-            $content = $content -replace [regex]::Escape($oldHmodule), $newHmodule
+            $oldNamedW = "return GetModuleHandleW(name);"
+            $newNamedW = "return mem::handle(GetModuleHandleW(name));"
             
-            Set-Content -Path $patternPath -Value $content
-            Write-Host "Pattern.h has been successfully upgraded for the compiler!"
+            $oldNamedN = "return GetModuleHandleA(nullptr);"
+            $newNamedN = "return mem::handle(GetModuleHandleA(nullptr));"
+            
+            $content = $content.Replace($oldNamedA, $newNamedA)
+            $content = $content.Replace($oldNamedW, $newNamedW)
+            $content = $content.Replace($oldNamedN, $newNamedN)
+            
+            Set-Content -Path $patternPath -Value $content -NoNewline
+            Write-Host "Pattern.h explicit casting patches successfully applied."
         } else {
-            Write-Warning "Target file path not found."
+            Write-Warning "Target file layout path not detected."
         }
 
+    # Added /p:LanguageStandard=stdcpp17 to instantly fix the parameter pack errors in NativeInvoker.h
     - name: Build Release Configuration
-      run: msbuild ScriptHookV-master/ScriptHookV.sln /p:Configuration=Release /p:Platform=x64 /p:WindowsTargetPlatformVersion=10.0 /p:PlatformToolset=v143 /m
+      run: |
+        msbuild ScriptHookV-master/ScriptHookV.sln `
+          /p:Configuration=Release `
+          /p:Platform=x64 `
+          /p:WindowsTargetPlatformVersion=10.0 `
+          /p:PlatformToolset=v143 `
+          /p:LanguageStandard=stdcpp17 `
+          /m
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
